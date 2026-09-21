@@ -1,4 +1,4 @@
-import type { User } from "@/lib/api";
+import { apiBlob, type User } from "@/lib/api";
 
 export type Student = {
   id: number;
@@ -83,6 +83,18 @@ export function currentWeekStart() {
 }
 
 export function timeText(value: string | null) { return value?.slice(0, 5) || ""; }
+
+export async function downloadPlanExport(planId: number, format: "pdf" | "excel", token: string) {
+  const blob = await apiBlob(`/planning/plans/${planId}/export/${format}/`, token);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `plan-${planId}.${format === "pdf" ? "pdf" : "xlsx"}`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 export function planningError(reason: unknown) {
   if (!(reason instanceof Error)) return "خطایی رخ داد.";

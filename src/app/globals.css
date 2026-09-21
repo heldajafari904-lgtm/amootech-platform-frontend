@@ -86,10 +86,17 @@ body {
 .planning-plan-heading > div:first-child, .planning-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; }
 .planning-status { display: inline-block; width: fit-content; padding: .2rem .6rem; border-radius: 2rem; background: #fff1d6; color: #745200; font-size: .78rem; }
 .planning-status.is-published { background: #e0f3e9; color: #176a45; }
-.planning-week { display: grid; grid-template-columns: repeat(7, minmax(175px, 1fr)); gap: .6rem; overflow-x: auto; padding-bottom: .5rem; align-items: stretch; }
-.planning-day { min-width: 0; background: white; border: 1px solid #dce3e8; border-radius: .6rem; padding: .65rem; display: flex; flex-direction: column; gap: .6rem; }
-.planning-day > header { display: flex; justify-content: space-between; align-items: baseline; gap: .3rem; }
+.planning-week { display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; }
+.planning-day { min-width: 0; background: white; border: 1px solid #dce3e8; border-radius: .6rem; padding: .8rem; display: grid; grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr); gap: 1rem; }
+.planning-day > header { display: flex; flex-direction: column; align-items: flex-start; gap: .3rem; border-left: 1px solid #dce3e8; padding-left: .75rem; }
 .planning-day > header small { color: #6a7881; font-size: .68rem; }
+.planning-day-content { min-width: 0; display: grid; gap: .7rem; }
+.planning-day-lane { min-width: 0; }
+.planning-day-lane h3, .planning-day-lane h4 { font-size: .8rem; color: #485d68; margin-bottom: .4rem; }
+.planning-timeline { display: flex; gap: .55rem; overflow-x: auto; padding: .2rem 0 .5rem; align-items: stretch; }
+.planning-timeline > .planning-block { flex: 0 0 min(16rem, 80vw); }
+.planning-flexible { border-top: 1px dashed #dce3e8; padding-top: .6rem; }
+.planning-day-content > .planning-editor { width: 100%; }
 .planning-day-items { display: grid; align-content: start; gap: .55rem; flex: 1; }
 .planning-empty { color: #71808a; font-size: .82rem; }
 .planning-day-actions { display: flex; flex-wrap: wrap; gap: .3rem; }
@@ -105,6 +112,7 @@ body {
 .planning-block-top { justify-content: space-between; }
 .planning-badge { padding: .1rem .4rem; border-radius: .3rem; background: #edf1f3; font-weight: 700; }
 .planning-block-meta { color: #485d68; }
+.planning-block-detail { color: #485d68; font-size: .78rem; }
 .planning-note { white-space: pre-wrap; color: #47545c; }
 .planning-block-actions { border-top: 1px solid #dce3e8; padding-top: .4rem; }
 .planning-block-actions button { padding: .2rem .35rem; font-size: .72rem; }
@@ -114,7 +122,10 @@ body {
 .planning-type-picker button { font-size: .8rem; }
 .planning-form-row > label { flex: 1 1 8rem; min-width: 0; }
 .planning-form-row input, .planning-form-row select, .planning-editor > label input, .planning-editor textarea { width: 100%; }
+.planning-academic-flow { display: grid; gap: .4rem; padding: .6rem; border: 1px solid #d5e3e6; border-radius: .4rem; background: white; }
+.planning-academic-flow .planning-hint { margin: 0; }
+.planning-academic-flow input[type="search"] { margin-bottom: .25rem; }
 .planning-copy-form { max-width: 28rem; margin-top: 1rem; padding: 1rem; border: 1px solid #dce3e8; background: white; border-radius: .6rem; }
 .planning-current { display: grid; gap: .3rem; padding: 1rem; background: #e6f3f4; border-radius: .6rem; }
 .planning-current a { color: #0e6477; text-decoration: underline; }
-@media (max-width: 700px) { .planning-header { flex-wrap: wrap; } .planning-header nav { order: 3; width: 100%; } .planning-summary { grid-template-columns: 1fr; } .planning-week { grid-template-columns: 1fr; overflow: visible; } .planning-toolbar form { display: grid; } .planning-toolbar form > label, .planning-toolbar > label { width: 100%; } }
+@media (max-width: 700px) { .planning-header { flex-wrap: wrap; } .planning-header nav { order: 3; width: 100%; } .planning-summary { grid-template-columns: 1fr; } .planning-day { grid-template-columns: 1fr; } .planning-day > header { border-left: 0; border-bottom: 1px solid #dce3e8; padding: 0 0 .5rem; } .planning-toolbar form { display: grid; } .planning-toolbar form > label, .planning-toolbar > label { width: 100%; } }

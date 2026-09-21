@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { baseUrl, Page, publicApi } from "@/lib/api";
+import { clearSession, errorMessage, obtainTokenPair, Page, publicApi, saveSession } from "@/lib/api";
 
 type Option = { id: number; name: string; grade?: number };
 const empty = { username: "", password: "", email: "", first_name: "", last_name: "", grade: "", field: "", school_name: "" };
@@ -26,12 +26,11 @@ export default function StudentRegistration() {
     event.preventDefault(); setError(""); setBusy(true);
     try {
       await publicApi("/auth/register/student/", "POST", { ...form, grade: Number(form.grade), field: Number(form.field) });
-      const response = await fetch(`${baseUrl}/auth/token/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: form.username, password: form.password }) });
-      if (!response.ok) throw new Error("Account created. Please sign in to view your profile.");
-      const tokens: { access: string } = await response.json();
-      sessionStorage.setItem("amootech_student_access", tokens.access);
+      clearSession("STUDENT");
+      const tokens = await obtainTokenPair(form.username, form.password);
+      saveSession("STUDENT", tokens);
       router.push("/student/profile");
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "Registration failed"); }
+    } catch (reason) { setError(errorMessage(reason)); }
     finally { setBusy(false); }
   }
 
