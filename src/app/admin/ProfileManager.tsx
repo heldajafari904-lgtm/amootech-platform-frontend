@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, allPages, Page, User } from "@/lib/api";
 
-type Profile = { id: number; user: User; counselor: number | null; grade: number | null; field: number | null };
+type Profile = { id: number; user: User; counselor: number | null; grade: number | null; field: number | null; school_name: string };
 type Option = { id: number; name?: string; user?: User; grade?: number };
-const blank = { username: "", password: "", email: "", first_name: "", last_name: "", is_active: true, counselor: "", grade: "", field: "" };
+const blank = { username: "", password: "", email: "", first_name: "", last_name: "", is_active: true, counselor: "", grade: "", field: "", school_name: "" };
 
 export default function ProfileManager({ kind }: { kind: "students" | "counselors" }) {
   const token = typeof window === "undefined" ? "" : sessionStorage.getItem("amootech_access") || "";
@@ -24,12 +24,12 @@ export default function ProfileManager({ kind }: { kind: "students" | "counselor
   }, [kind, token]);
   useEffect(() => { if (token) { Promise.resolve().then(() => load()); if (kind === "students") { allPages<Option>("/academics/grades/", token).then(setGrades).catch((e) => setError(String(e))); allPages<Option>("/counselors/", token).then(setCounselors).catch((e) => setError(String(e))); } } }, [kind, token, load]);
   useEffect(() => { if (kind === "students" && form.grade && token) allPages<Option>(`/academics/fields/?grade=${form.grade}`, token).then(setFields).catch((e) => setError(String(e))); }, [kind, form.grade, token]);
-  function edit(row: Profile) { setSelected(row.id); setForm({ username: row.user.username, password: "", email: row.user.email, first_name: row.user.first_name, last_name: row.user.last_name, is_active: row.user.is_active ?? true, counselor: row.counselor?.toString() || "", grade: row.grade?.toString() || "", field: row.field?.toString() || "" }); }
+  function edit(row: Profile) { setSelected(row.id); setForm({ username: row.user.username, password: "", email: row.user.email, first_name: row.user.first_name, last_name: row.user.last_name, is_active: row.user.is_active ?? true, counselor: row.counselor?.toString() || "", grade: row.grade?.toString() || "", field: row.field?.toString() || "", school_name: row.school_name || "" }); }
   async function save(event: React.FormEvent) {
     event.preventDefault(); setError("");
     const payload: Record<string, string | number | boolean | null> = { username: form.username, email: form.email, first_name: form.first_name, last_name: form.last_name, is_active: form.is_active };
     if (form.password) payload.password = form.password;
-    if (kind === "students") { payload.counselor = form.counselor ? Number(form.counselor) : null; payload.grade = form.grade ? Number(form.grade) : null; payload.field = form.field ? Number(form.field) : null; }
+    if (kind === "students") { payload.counselor = form.counselor ? Number(form.counselor) : null; payload.grade = form.grade ? Number(form.grade) : null; payload.field = form.field ? Number(form.field) : null; payload.school_name = form.school_name; }
     try { await api(`/${kind}/${selected ? `${selected}/` : ""}`, token, selected ? "PATCH" : "POST", payload); setForm(blank); setSelected(null); load(); } catch (e) { setError(String(e)); }
   }
   const title = kind === "students" ? "Students" : "Counselors";

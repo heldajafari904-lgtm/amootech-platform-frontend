@@ -27,3 +27,14 @@ export async function allPages<T>(path: string, token: string): Promise<T[]> {
   }
   return items;
 }
+
+export async function publicApi<T>(path: string, method = "GET", body?: object): Promise<T> {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error(JSON.stringify(await response.json().catch(() => ({}))));
+  return response.json();
+}
