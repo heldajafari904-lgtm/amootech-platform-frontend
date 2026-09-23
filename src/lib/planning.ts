@@ -39,6 +39,18 @@ export type PlanItem = {
   topic: number | null;
   topic_name?: string;
   test_count: number | null;
+  counselor_editable?: boolean;
+  edit_lock_reason?: string | null;
+};
+export type PlanItemExecution = {
+  plan_item: number;
+  status: "IN_PROGRESS" | "PAUSED" | "COMPLETED" | "PARTIAL" | "NOT_DONE";
+  started_at: string | null;
+  current_session_started_at: string | null;
+  accumulated_seconds: number;
+  elapsed_seconds: number;
+  completed_at: string | null;
+  completion_method: "QUICK" | "TIMER";
 };
 export type PlanDay = { id: number; plan: number; date: string; items: PlanItem[] };
 export type Plan = {

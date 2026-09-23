@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { allPages } from "@/lib/api";
 import { planningError, Student } from "@/lib/planning";
-import { useCounselor } from "../layout";
+import { useCounselor } from "@/lib/counselorContext";
 
 export default function CounselorStudents() {
   const { token } = useCounselor();

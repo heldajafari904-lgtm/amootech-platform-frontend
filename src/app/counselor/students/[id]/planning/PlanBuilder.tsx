@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api, allPages } from "@/lib/api";
 import { AcademicOption, Commitment, currentWeekStart, downloadPlanExport, persianDate, Plan, PlanDay, PlanItem, planningError, Student, weekDates } from "@/lib/planning";
-import { useCounselor } from "../../../layout";
+import { useCounselor } from "@/lib/counselorContext";
 import StudentSummary from "../../StudentSummary";
 import BlockEditor from "./BlockEditor";
 import PlanBlock from "@/app/student/plans/PlanBlock";
+import { tehranTodayIso } from "@/lib/reports";
 
 export default function PlanBuilder({ studentId }: { studentId: string }) {
   const { token } = useCounselor();
@@ -29,12 +30,13 @@ export default function PlanBuilder({ studentId }: { studentId: string }) {
   const [exporting, setExporting] = useState<"pdf" | "excel" | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const today = tehranTodayIso();
 
   useEffect(() => {
     Promise.all([
       api<Student>(`/students/${studentId}/`, token),
-      allPages<Commitment>("/planning/commitments/", token),
-      allPages<Plan>("/planning/plans/", token),
+      allPages<Commitment>(`/planning/commitments/?student=${studentId}`, token),
+      allPages<Plan>(`/planning/plans/?student=${studentId}`, token),
       allPages<AcademicOption>("/academics/grades/", token),
     ]).then(([studentData, allCommitments, allPlans, gradeOptions]) => {
       setStudent(studentData);
@@ -42,7 +44,10 @@ export default function PlanBuilder({ studentId }: { studentId: string }) {
       setCommitments(allCommitments.filter((item) => item.student === studentData.id));
       const ownPlans = allPlans.filter((item) => item.student === studentData.id);
       setPlans(ownPlans);
-      if (ownPlans.length) setPlanId(ownPlans[0].id);
+      const query = new URLSearchParams(window.location.search);
+      const requested = Number(query.get("plan"));
+      if (requested && ownPlans.some((item) => item.id === requested)) setPlanId(requested);
+      else if (!query.has("new") && ownPlans.length) setPlanId(ownPlans[0].id);
     }).catch((reason) => setError(planningError(reason))).finally(() => setLoading(false));
   }, [studentId, token]);
 
@@ -163,13 +168,13 @@ export default function PlanBuilder({ studentId }: { studentId: string }) {
     {student && !student.field && <p className="planning-hint">رشته دانش‌آموز هنوز ثبت نشده است. برای باکس‌های درسی ابتدا رشته را تکمیل کنید.</p>}
     <section className="planning-toolbar"><form onSubmit={createPlan}><h2>برنامه جدید</h2><label>شروع هفته (میلادی)<input type="date" required value={weekStart} onChange={(event) => setWeekStart(event.target.value)}/></label><label>عنوان (اختیاری)<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="برنامه این هفته"/></label><button disabled={busy}>{busy ? "در حال ساخت…" : "ساخت برنامه ۷ روزه"}</button></form>{plans.length > 0 && <label>برنامه‌های این دانش‌آموز<select value={planId || ""} onChange={(event) => { setPlan(null); setEditorDayId(null); setPlanId(Number(event.target.value)); }}><option value="" disabled>انتخاب برنامه</option>{plans.map((entry) => <option key={entry.id} value={entry.id}>{entry.title || persianDate(entry.start_date)} · {entry.status === "DRAFT" ? "پیش‌نویس" : "منتشرشده"}</option>)}</select></label>}</section>
     {!plan && !error && <p>هنوز برنامه‌ای برای این دانش‌آموز انتخاب نشده است.</p>}
-    {plan && <section><div className="planning-plan-heading"><div><h2>{plan.title || `هفته ${persianDate(plan.start_date)}`}</h2><span className={`planning-status ${plan.status === "PUBLISHED" ? "is-published" : ""}`}>{plan.status === "DRAFT" ? "پیش‌نویس" : "منتشرشده"}</span></div><div className="planning-actions"><button type="button" onClick={() => exportPlan("pdf")} disabled={exporting !== null}>{exporting === "pdf" ? "در حال دریافت…" : "دریافت PDF"}</button><button type="button" onClick={() => exportPlan("excel")} disabled={exporting !== null}>{exporting === "excel" ? "در حال دریافت…" : "دریافت اکسل"}</button><button type="button" onClick={duplicatePlan}>کپی برنامه</button>{plan.status === "DRAFT" && <button type="button" className="planning-primary" onClick={publish}>انتشار برنامه</button>}</div></div><p className="planning-hint">برای هر روز «افزودن باکس» را بزنید. زمان ساعت برای باکس‌ها اختیاری است.</p><div className="planning-week">{weekDates(plan.start_date, plan.end_date).map((date) => {
+    {plan && <section><div className="planning-plan-heading"><div><h2>{plan.title || `هفته ${persianDate(plan.start_date)}`}</h2><span className={`planning-status ${plan.status === "PUBLISHED" ? "is-published" : ""}`}>{plan.status === "DRAFT" ? "پیش‌نویس" : "منتشرشده"}</span></div><div className="planning-actions"><button type="button" onClick={() => exportPlan("pdf")} disabled={exporting !== null}>{exporting === "pdf" ? "در حال دریافت…" : "دریافت PDF"}</button><button type="button" onClick={() => exportPlan("excel")} disabled={exporting !== null}>{exporting === "excel" ? "در حال دریافت…" : "دریافت اکسل"}</button><button type="button" onClick={duplicatePlan}>ساخت از روی برنامه قبلی</button>{plan.status === "DRAFT" && <button type="button" className="planning-primary" onClick={publish}>انتشار برنامه</button>}</div></div><p className="planning-hint">روزهای گذشته فقط قابل مشاهده‌اند. امروز و روزهای آینده تا زمانی که دانش‌آموز عملکردی روی باکس ثبت نکرده باشد قابل ویرایش هستند.</p><div className="planning-week">{weekDates(plan.start_date, plan.end_date).map((date) => {
       const day = plan.days?.find((entry) => entry.date === date);
       const items = day?.items || [];
       const timed = items.filter((item) => item.start_time && item.end_time).sort((a, b) => a.start_time!.localeCompare(b.start_time!));
       const flexible = items.filter((item) => !item.start_time || !item.end_time);
-      const renderBlock = (item: PlanItem) => { const index = items.findIndex((entry) => entry.id === item.id); return <PlanBlock key={item.id} item={item} actions={<><button type="button" onClick={() => openEditor(date, item)}>ویرایش</button><button type="button" onClick={() => copyItem(item, day!)}>کپی</button><button type="button" onClick={() => removeItem(item)}>حذف</button><button type="button" aria-label="انتقال به بالا" disabled={index === 0} onClick={() => moveItem(day!, index, -1)}>↑</button><button type="button" aria-label="انتقال به پایین" disabled={index === items.length - 1} onClick={() => moveItem(day!, index, 1)}>↓</button></>}/>; };
-      return <section className="planning-day" key={date}><header><h3>{persianDate(date)}</h3><small dir="ltr">{date}</small></header><div className="planning-day-content"><div className="planning-day-lane"><h4>زمان‌بندی‌شده</h4><div className="planning-timeline">{timed.length ? timed.map(renderBlock) : <p className="planning-empty">باکس زمان‌دار ندارد.</p>}</div></div><div className="planning-day-lane planning-flexible"><h4>بدون ساعت مشخص</h4><div className="planning-timeline">{flexible.length ? flexible.map(renderBlock) : <p className="planning-empty">باکس انعطاف‌پذیر ندارد.</p>}</div></div><div className="planning-day-actions"><button type="button" className="planning-add" onClick={() => openEditor(date)}>+ افزودن باکس</button>{day && <button type="button" onClick={() => { setCopyDayId(day.id); setCopyTargetPlan(String(plan.id)); setCopyDate(weekDates(plan.start_date, plan.end_date).find((candidate) => !plan.days?.some((entry) => entry.date === candidate)) || ""); }}>کپی روز</button>}{day && items.length === 0 && <button type="button" onClick={() => removeEmptyDay(day)}>حذف روز خالی</button>}</div>{editorDayId === day?.id && student && <BlockEditor key={`${editorDayId}-${editingItem?.id || "new"}`} token={token} dayId={day.id} ordering={Math.max(-1, ...items.map((item) => item.ordering)) + 1} student={student} grades={grades} initial={editingItem} onSaved={afterSave} onCancel={() => { setEditorDayId(null); setEditingItem(undefined); }}/>}</div></section>;
+      const renderBlock = (item: PlanItem) => { const index = items.findIndex((entry) => entry.id === item.id); return <PlanBlock key={item.id} item={item} actions={item.counselor_editable ? <><button type="button" onClick={() => openEditor(date, item)}>ویرایش</button><button type="button" onClick={() => copyItem(item, day!)}>کپی</button><button type="button" onClick={() => removeItem(item)}>حذف</button><button type="button" aria-label="انتقال به بالا" disabled={index === 0} onClick={() => moveItem(day!, index, -1)}>↑</button><button type="button" aria-label="انتقال به پایین" disabled={index === items.length - 1} onClick={() => moveItem(day!, index, 1)}>↓</button></> : item.edit_lock_reason ? <span className="planning-lock-reason">{item.edit_lock_reason}</span> : undefined}/>; };
+      return <section className={`planning-day ${date === today ? "planning-day-today" : ""}`} key={date}><header>{date < today && <span className="planning-past-label">گذشته — فقط مشاهده</span>}{date === today && <span className="planning-today-label">امروز</span>}<h3>{persianDate(date)}</h3><small dir="ltr">{date}</small></header><div className="planning-day-content"><div className="planning-day-lane"><h4>زمان‌بندی‌شده</h4><div className="planning-timeline">{timed.length ? timed.map(renderBlock) : <p className="planning-empty">باکس زمان‌دار ندارد.</p>}</div></div><div className="planning-day-lane planning-flexible"><h4>بدون ساعت مشخص</h4><div className="planning-timeline">{flexible.length ? flexible.map(renderBlock) : <p className="planning-empty">باکس انعطاف‌پذیر ندارد.</p>}</div></div>{date >= today && <div className="planning-day-actions"><button type="button" className="planning-add" onClick={() => openEditor(date)}>+ افزودن باکس</button>{day && <button type="button" onClick={() => { setCopyDayId(day.id); setCopyTargetPlan(String(plan.id)); setCopyDate(weekDates(plan.start_date, plan.end_date).find((candidate) => candidate >= today && !plan.days?.some((entry) => entry.date === candidate)) || ""); }}>کپی روز</button>}{day && items.length === 0 && <button type="button" onClick={() => removeEmptyDay(day)}>حذف روز خالی</button>}</div>}{editorDayId === day?.id && student && <BlockEditor key={`${editorDayId}-${editingItem?.id || "new"}`} token={token} dayId={day.id} ordering={Math.max(-1, ...items.map((item) => item.ordering)) + 1} student={student} grades={grades} initial={editingItem} onSaved={afterSave} onCancel={() => { setEditorDayId(null); setEditingItem(undefined); }}/>}</div></section>;
     })}</div>{copyDayId && <form className="planning-copy-form" onSubmit={duplicateDay}><h3>کپی روز</h3><label>برنامه مقصد<select value={copyTargetPlan} onChange={(event) => { setCopyTargetPlan(event.target.value); const target = plans.find((entry) => entry.id === Number(event.target.value)); setCopyDate(target?.start_date || ""); }}>{plans.map((entry) => <option key={entry.id} value={entry.id}>{entry.title || persianDate(entry.start_date)} · {entry.status === "DRAFT" ? "پیش‌نویس" : "منتشرشده"}</option>)}</select></label><label>تاریخ مقصد<input type="date" required value={copyDate} onChange={(event) => setCopyDate(event.target.value)}/></label><button>ساخت کپی</button><button type="button" className="planning-subtle" onClick={() => setCopyDayId(null)}>انصراف</button></form>}</section>}
   </main>;
 }

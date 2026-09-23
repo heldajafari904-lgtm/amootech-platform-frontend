@@ -47,7 +47,7 @@ function roleFor(token: string): AuthRole | undefined {
 function readable(value: unknown): string[] {
   if (typeof value === "string") return [value];
   if (Array.isArray(value)) return value.flatMap(readable);
-  if (value && typeof value === "object") return Object.entries(value).filter(([key]) => key !== "code" && key !== "messages").flatMap(([key, item]) => {
+  if (value && typeof value === "object") return Object.entries(value).filter(([key]) => key !== "code" && key !== "messages" && key !== "active_item").flatMap(([key, item]) => {
     const values = readable(item);
     return key === "detail" || key === "non_field_errors" ? values : values.map((message) => `${key}: ${message}`);
   });
@@ -125,12 +125,24 @@ export async function apiBlob(path: string, token: string): Promise<Blob> {
 export async function allPages<T>(path: string, token: string): Promise<T[]> {
   const items: T[] = [];
   let next: string | null = path;
+  const visited = new Set<string>();
   while (next) {
-    const page: Page<T> = await api<Page<T>>(next, token);
+    if (visited.has(next)) throw new Error("پاسخ صفحه‌بندی سرویس نامعتبر است.");
+    visited.add(next);
+    const page: Page<T> = normalizePage<T>(await api<unknown>(next, token));
     items.push(...page.results);
     next = page.next;
   }
   return items;
+}
+
+export function normalizePage<T>(value: unknown): Page<T> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("ساختار پاسخ فهرست از سرویس معتبر نیست.");
+  const page = value as Partial<Page<T>>;
+  if (!Array.isArray(page.results) || typeof page.count !== "number" || !(page.next === null || typeof page.next === "string") || !(page.previous === null || typeof page.previous === "string")) {
+    throw new Error("ساختار پاسخ فهرست از سرویس معتبر نیست.");
+  }
+  return page as Page<T>;
 }
 
 export async function publicApi<T>(path: string, method = "GET", body?: object): Promise<T> {

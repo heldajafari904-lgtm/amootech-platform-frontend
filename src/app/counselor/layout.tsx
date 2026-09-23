@@ -1,16 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { createContext, useContext, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { accessToken, api, clearSession, errorMessage, obtainTokenPair, onSessionExpired, saveSession, SESSION_EXPIRED, User } from "@/lib/api";
-
-const CounselorContext = createContext<{ token: string; user: User } | null>(null);
-
-export function useCounselor() {
-  const value = useContext(CounselorContext);
-  if (!value) throw new Error("Counselor context is unavailable");
-  return value;
-}
+import { CounselorContext } from "@/lib/counselorContext";
 
 export default function CounselorLayout({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState("");
