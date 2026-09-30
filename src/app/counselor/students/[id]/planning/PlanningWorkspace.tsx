@@ -4,19 +4,23 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, allPages } from "@/lib/api";
 import {
-  currentWeekStart,
+  addDaysISO,
+  Commitment,
   downloadPlanExport,
+  formatJalaliShort,
   persianDate,
   Plan,
   PlanDay,
   PlanItem,
   planningError,
+  planTitleSuggestion,
+  sevenDayRange,
   Student,
-  weekDates,
+  tehranTodayISO,
+  tehranTomorrowISO,
 } from "@/lib/planning";
 import { useCounselor } from "@/lib/counselorContext";
 import { fetchAcademicTree, type AcademicTree } from "@/lib/academicTree";
-import { tehranTodayIso } from "@/lib/reports";
 
 // ---- util ----
 function notify(setNotice: (s: string) => void, msg: string) {
@@ -32,45 +36,87 @@ function apiErrorMessage(reason: unknown): string {
 }
 
 // ---- Student Header ----
+function toFa(s: string): string { return s.replace(/[0-9]/g, (d: string) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]); }
+
 function StudentPlanningHeader({
   student,
   plan,
   counselorName,
+  metrics,
 }: {
   student: Student;
   plan: Plan | null;
   counselorName: string;
+  metrics: { plannedMinutes: number; actualMinutes: number; plannedTests: number; actualTests: number; completion: number | null } | null;
 }) {
+  const stats = plan ? (()=>{ const items=(plan.days||[]).flatMap(d=>d.items); const mins=items.reduce((a,i)=>a+(i.planned_duration_minutes||0),0); const tests=items.reduce((a,i)=>a+(i.test_count||0),0); const h=Math.floor(mins/60), m=mins%60; return {mins,h,m,tests,count:items.length}; })() : null;
+  // perDay handled by TopChart
+  const am = metrics?.actualMinutes;
+  const at = metrics?.actualTests;
+  const comp = metrics?.completion;
+  const plannedLabel = stats ? `${toFa(String(stats.h))}:${toFa(String(stats.m).padStart(2,"0"))}` : "—";
+  const actualLabel = am!=null && am>0 ? `${toFa(String(Math.floor(am/60)))}:${toFa(String(am%60).padStart(2,"0"))}` : null;
   return (
-    <section className="ws-header" aria-label="اطلاعات دانش‌آموز و برنامه">
-      <div className="ws-header-main">
-        <div>
-          <p className="ws-eyebrow">فضای برنامه‌ریزی</p>
-          <h1>
-            {student.user.first_name} {student.user.last_name}
-          </h1>
-          <p className="ws-sub">
-            {student.grade_name || "پایه نامشخص"} · {student.field_name || "رشته نامشخص"}
-            {student.school_name ? ` · ${student.school_name}` : ""} · مشاور: {counselorName}
-          </p>
-        </div>
-        {plan && (
-          <div className="ws-plan-meta">
-            <strong>{plan.title || `هفته ${persianDate(plan.start_date)}`}</strong>
-            <span>
-              {persianDate(plan.start_date)} تا {persianDate(plan.end_date)}
-            </span>
-            <span className={`ws-status ${plan.status === "PUBLISHED" ? "is-published" : ""}`}>
-              {plan.status === "DRAFT" ? "پیش‌نویس" : "منتشرشده"}
-            </span>
+    <div className="ws-top-right">
+      <div className="ws-hero-top">
+        <div className="ws-hero-student">
+          <div className="ws-hero-avatar">{(student.user.first_name?.[0] || student.user.username[0] || "?").toUpperCase()}</div>
+          <div>
+            <div className="ws-hero-name">{student.user.first_name} {student.user.last_name}</div>
+            <div className="ws-hero-meta">{student.grade_name || "پایه نامشخص"} · {student.field_name || "رشته نامشخص"} · مشاور: {counselorName}</div>
           </div>
-        )}
+        </div>
+        {plan && <span className="ws-hero-week">{plan.title || `${persianDate(plan.start_date)} تا ${persianDate(plan.end_date)}`}</span>}
       </div>
-    </section>
+      <div className="ws-hero-stats" aria-label="شاخص‌های برنامه">
+        <span>برنامه <strong>{plannedLabel}</strong></span>
+        {actualLabel ? <span>اجرا <strong>{actualLabel}</strong></span> : stats ? <span>برنامه <strong>{plannedLabel}</strong></span> : null}
+        <span>تست <strong>{stats ? toFa(String(stats.tests)) : "—"}</strong>{at!=null && at!==stats?.tests ? ` / واقعی ${toFa(String(at))}` : ""}</span>
+        {comp!=null ? <span>تکمیل <strong>{toFa(String(comp))}٪</strong></span> : null}
+        {stats && <span className={`ws-status ${plan!.status === "PUBLISHED" ? "is-published" : ""}`}>{plan!.status === "DRAFT" ? "پیش‌نویس" : "منتشرشده"}</span>}
+      </div>
+    </div>
   );
 }
 
-// ---- Metrics Bar ----
+function TopChart({ plan }: { plan: Plan | null }) {
+  const perDay = plan ? (plan.days||[]).slice().sort((a,b)=>a.date.localeCompare(b.date)).map(d=> ({date:d.date, mins: d.items.reduce((a,i)=>a+(i.planned_duration_minutes||0),0), tests: d.items.reduce((a,i)=>a+(i.test_count||0),0)})) : [];
+  const [tab,setTab] = useState<"study"|"test">("study");
+  if (!plan || perDay.length===0) return null;
+  const maxMins = Math.max(1, ...perDay.map(d=>d.mins));
+  const maxTests = Math.max(1, ...perDay.map(d=>d.tests));
+  return (
+    <div className="ws-top-left">
+      <div className="ws-top-chart" aria-label="نمودار هفتگی">
+        <div className="ws-top-chart-head">
+          <span className="ws-top-chart-title">روند هفته</span>
+          <div className="ws-top-chart-tabs" role="tablist">
+            <button type="button" role="tab" aria-selected={tab==="study"} className={tab==="study"?"is-active":""} onClick={()=>setTab("study")}>مطالعه</button>
+            <button type="button" role="tab" aria-selected={tab==="test"} className={tab==="test"?"is-active":""} onClick={()=>setTab("test")}>تست</button>
+          </div>
+        </div>
+        <div className="ws-mini-chart">
+          {perDay.map(d=> {
+            const val = tab==="study" ? d.mins : d.tests;
+            const max = tab==="study" ? maxMins : maxTests;
+            return (
+              <div key={d.date} className="ws-mini-bar">
+                <div className="ws-mini-bar-track">
+                  <span style={{height: `${Math.max(4, (val/max)*100)}%`, background: tab==="study"?"#0e6477":"#2a9d8f"}} />
+                </div>
+                <span className="ws-mini-bar-value">{tab==="study" ? toFa(String(Math.round(val/6)/10)) : toFa(String(val))}</span>
+                <span className="ws-mini-bar-label">{formatJalaliShort(d.date).split(" ")[0].slice(0,3)}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Metrics Bar (kept for compatibility, not rendered) ----
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function MetricsBar({ plan, token }: { plan: Plan | null; token: string }) {
   const [data, setData] = useState<null | {
     plannedMinutes: number;
@@ -153,6 +199,148 @@ type QuickAddProps = {
   onCancel?: () => void;
   mode?: "create" | "edit";
 };
+
+function WizardAddBox({ token, dayId, ordering, tree, onCreated, onError, onCancel }: { token: string; dayId: number; ordering: number; tree: AcademicTree; onCreated: () => void; onError:(m:string)=>void; onCancel:()=>void }) {
+  const [step, setStep] = useState(0);
+  const [kind, setKind] = useState<PlanItem["kind"] | null>(null);
+  const [subject, setSubject] = useState<string>("");
+  const [chapter, setChapter] = useState<string>("");
+  const [topic, setTopic] = useState<string>("");
+  const [duration, setDuration] = useState<string>("60");
+  const [testCount, setTestCount] = useState<string>("");
+  const [note, setNote] = useState<string>("");
+  const [busy, setBusy] = useState(false);
+  const chapters = subject ? tree.chapters.filter(c=> String(c.subject)===subject) : [];
+  const topics = chapter ? tree.topics.filter(t=> String(t.chapter)===chapter) : [];
+  // Dynamic steps: kind -> subject (if academic) -> chapter/topic -> duration -> testCount (if TEST) -> confirm
+  // Build step list
+  const steps: {key:string; optional?:boolean}[] = [];
+  steps.push({key:"kind"});
+  if (kind && kind!=="EVENT") steps.push({key:"subject"});
+  if (kind && kind!=="EVENT" && subject && chapters.length>0) steps.push({key:"chapter", optional: true});
+  if (kind && kind!=="EVENT" && chapter && topics.length>0) steps.push({key:"topic", optional: true});
+  steps.push({key:"duration"});
+  if (kind==="TEST") steps.push({key:"testCount"});
+  steps.push({key:"confirm"});
+  const cur = steps[step]?.key;
+  const total = steps.length;
+  const progress = ((step+1)/total)*100;
+
+  function next(){ if(step < total-1) setStep(s=>s+1); }
+  function prev(){ if(step>0) setStep(s=>s-1); }
+
+  async function create(){
+    if(busy) return;
+    setBusy(true);
+    const payload: Record<string, unknown> = {
+      plan_day: dayId, kind: kind!, ordering, title: "", planned_duration_minutes: duration ? Number(duration):null, start_time: null, end_time: null, note: note || "",
+      subject: subject ? Number(subject):null, chapter: chapter ? Number(chapter):null, topic: topic ? Number(topic):null,
+      test_count: kind==="TEST" ? (testCount ? Number(testCount):null) : null,
+    };
+    try { await api("/planning/items/", token, "POST", payload); onCreated(); } catch(reason){ onError(apiErrorMessage(reason)); } finally { setBusy(false); }
+  }
+
+  // Keyboard support
+  function handleKey(e: React.KeyboardEvent){ if(e.key==="Escape") onCancel(); }
+
+  return (
+    <div className="ws-wizard" role="dialog" aria-modal="true" onKeyDown={handleKey} onClick={onCancel}>
+      <div className="ws-wizard-card" onClick={e=>e.stopPropagation()}>
+        <div className="ws-wizard-head">
+          <span className="ws-wizard-step">مرحله {step+1} از {total}</span>
+          <button type="button" className="ws-subtle" onClick={onCancel}>✕</button>
+        </div>
+        <div className="ws-wizard-progress"><span style={{width: `${progress}%`}} /></div>
+
+        {cur==="kind" && (
+          <div className="ws-wizard-options" aria-label="نوع باکس">
+            <p className="ws-wizard-title">نوع باکس را انتخاب کن</p>
+            {(["STUDY","TEST","REVIEW","EXAM","EVENT"] as const).map(k=> (
+              <button key={k} type="button" className={`ws-wizard-option ${kind===k?"is-selected":""}`} onClick={()=>{ setKind(k); setTimeout(next,120); }}>{k==="STUDY"?"مطالعه":k==="TEST"?"تست":k==="REVIEW"?"مرور":k==="EXAM"?"آزمون":"سایر"}</button>
+            ))}
+          </div>
+        )}
+
+        {cur==="subject" && (
+          <div className="ws-wizard-options">
+            <p className="ws-wizard-title">درس را انتخاب کن</p>
+            {tree.subjects.length===0 ? <p className="ws-empty-text">درسی یافت نشد</p> : tree.subjects.map(s=> (
+              <button key={s.id} type="button" className={`ws-wizard-option ${subject===String(s.id)?"is-selected":""}`} onClick={()=>{ setSubject(String(s.id)); setChapter(""); setTopic(""); setTimeout(next,120); }}>{s.name}</button>
+            ))}
+            <button type="button" className="ws-wizard-skip" onClick={next}>رد شدن</button>
+          </div>
+        )}
+
+        {cur==="chapter" && (
+          <div className="ws-wizard-options">
+            <p className="ws-wizard-title">فصل / مبحث</p>
+            {chapters.map(c=> (
+              <button key={c.id} type="button" className={`ws-wizard-option ${chapter===String(c.id)?"is-selected":""}`} onClick={()=>{ setChapter(String(c.id)); setTopic(""); setTimeout(next,120); }}>{c.name}</button>
+            ))}
+            <button type="button" className="ws-wizard-skip" onClick={()=>{ setChapter(""); next(); }}>رد شدن</button>
+          </div>
+        )}
+
+        {cur==="topic" && (
+          <div className="ws-wizard-options">
+            <p className="ws-wizard-title">ریز مبحث</p>
+            {topics.map(topicItem=> (
+              <button key={topicItem.id} type="button" className={`ws-wizard-option ${topic===String(topicItem.id)?"is-selected":""}`} onClick={()=>{ setTopic(String(topicItem.id)); setTimeout(next,120); }}>{topicItem.name}</button>
+            ))}
+            <button type="button" className="ws-wizard-skip" onClick={()=>{ setTopic(""); next(); }}>رد شدن</button>
+          </div>
+        )}
+
+        {cur==="duration" && (
+          <div className="ws-wizard-options">
+            <p className="ws-wizard-title">مدت زمان</p>
+            <div style={{display:"flex",flexWrap:"wrap",gap:".4rem"}}>
+              {["30","45","60","90","120"].map(v=> (
+                <button key={v} type="button" className={`ws-wizard-option ${duration===v?"is-selected":""}`} style={{flex:"1 1 4rem"}} onClick={()=>{ setDuration(v); setTimeout(next,120); }}>{v} دقیقه</button>
+              ))}
+            </div>
+            <label style={{display:"grid",gap:".25rem",fontSize:".78rem"}}>دلخواه<input type="number" min={5} value={duration} onChange={e=>setDuration(e.target.value)} /></label>
+            <button type="button" className="ws-link" onClick={next}>ادامه</button>
+          </div>
+        )}
+
+        {cur==="testCount" && (
+          <div className="ws-wizard-options">
+            <p className="ws-wizard-title">تعداد تست</p>
+            {["5","10","20","30","50"].map(v=> (
+              <button key={v} type="button" className={`ws-wizard-option ${testCount===v?"is-selected":""}`} onClick={()=>{ setTestCount(v); setTimeout(next,120); }}>{v} تست</button>
+            ))}
+            <label style={{display:"grid",gap:".25rem"}}>دلخواه<input type="number" min={1} value={testCount} onChange={e=>setTestCount(e.target.value)} /></label>
+            <button type="button" className="ws-wizard-skip" onClick={()=>{ setTestCount(""); next(); }}>رد شدن</button>
+          </div>
+        )}
+
+        {cur==="confirm" && (
+          <div className="ws-wizard-options">
+            <p className="ws-wizard-title">بازبینی کوتاه</p>
+            <div className="ws-wizard-preview">
+              <span>{kind==="STUDY"?"مطالعه":kind==="TEST"?"تست":kind==="REVIEW"?"مرور":kind==="EXAM"?"آزمون":"رویداد"} {subject ? `— ${tree.subjects.find(s=>String(s.id)===subject)?.name || ""}` : ""}</span>
+              {chapter && <span>فصل: {chapters.find(c=>String(c.id)===chapter)?.name}</span>}
+              <span>{duration} دقیقه {testCount ? `· ${testCount} تست` : ""}</span>
+            </div>
+            <label style={{display:"grid",gap:".2rem",fontSize:".78rem"}}>توضیحات (اختیاری، بعداً هم قابل افزودن است)<textarea rows={2} value={note} onChange={e=>setNote(e.target.value)} placeholder="مثلاً صفحات یا نکته" /></label>
+            <div className="ws-wizard-actions">
+              <button type="button" disabled={busy || !kind} onClick={create} className="ws-primary">{busy ? "در حال ثبت…" : "ثبت باکس"}</button>
+              <button type="button" className="ws-wizard-skip" onClick={prev}>بازگشت</button>
+            </div>
+          </div>
+        )}
+
+        {cur!=="kind" && cur!=="confirm" && (
+          <div className="ws-wizard-actions">
+            <button type="button" className="ws-wizard-skip" onClick={prev}>بازگشت</button>
+            {steps[step]?.optional && <button type="button" className="ws-wizard-skip" onClick={next}>رد شدن</button>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function QuickAdd({ token, dayId, ordering, tree, onCreated, onError, initialItem, onCancel, mode = "create" }: QuickAddProps) {
   const [kind, setKind] = useState<PlanItem["kind"]>((initialItem?.kind as PlanItem["kind"]) || "STUDY");
@@ -286,12 +474,16 @@ function QuickAdd({ token, dayId, ordering, tree, onCreated, onError, initialIte
 }
 
 // ---- Card ----
+function toFaDigits(s: string): string { return s.replace(/[0-9]/g, (d: string) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]); }
+function formatDuration(mins: number | null): string { if(!mins) return ""; const h=Math.floor(mins/60), m=mins%60; return m? `${toFaDigits(String(h))}:${toFaDigits(String(m).padStart(2,"0"))}` : `${toFaDigits(String(h))}:۰۰`; }
+
 function PlanActivityCard({
   item,
   onEdit,
   onDuplicate,
   onMove,
   onDelete,
+  onAddNote,
   draggableProps,
 }: {
   item: PlanItem;
@@ -299,29 +491,28 @@ function PlanActivityCard({
   onDuplicate: () => void;
   onMove: () => void;
   onDelete: () => void;
+  onAddNote: () => void;
   draggableProps?: React.HTMLAttributes<HTMLDivElement>;
 }) {
-  const kindClass = `ws-card ws-card-${item.kind.toLowerCase()}`;
+  const kindClass = `ws-box ws-box-${item.kind.toLowerCase()}`;
+  const title = item.title || item.subject_name || "—";
+  const sub = (item.chapter_name || item.topic_name) ? [item.chapter_name, item.topic_name].filter(Boolean).join(" › ") : (item.subject_name && item.title ? item.subject_name : "");
   return (
     <article className={kindClass} draggable {...draggableProps} data-item-id={item.id}>
-      <div className="ws-card-head">
-        <span className="ws-badge">{item.kind === "STUDY" ? "مطالعه" : item.kind === "TEST" ? "تست" : item.kind === "REVIEW" ? "مرور" : item.kind === "EXAM" ? "آزمون" : "رویداد"}</span>
-        {item.start_time && item.end_time && <span className="ws-time" dir="ltr">{item.start_time.slice(0,5)}–{item.end_time.slice(0,5)}</span>}
+      <div className="ws-box-head">
+        <span className="ws-box-kind">{item.kind === "STUDY" ? "مطالعه" : item.kind === "TEST" ? "تست" : item.kind === "REVIEW" ? "مرور" : item.kind === "EXAM" ? "آزمون" : "رویداد"}</span>
+        {item.start_time && item.end_time && <span className="ws-box-time">{toFaDigits(item.start_time.slice(0,5))}–{toFaDigits(item.end_time.slice(0,5))}</span>}
       </div>
-      <strong className="ws-card-title">{item.title || item.subject_name || "—"}</strong>
-      {(item.chapter_name || item.topic_name) && <span className="ws-card-detail">{[item.chapter_name, item.topic_name].filter(Boolean).join(" ← ")}</span>}
-      {item.subject_name && item.title && <span className="ws-card-detail">{item.subject_name}</span>}
-      <div className="ws-card-meta">
-        {item.planned_duration_minutes != null && <span>{item.planned_duration_minutes} دقیقه</span>}
-        {item.test_count != null && <span>{item.test_count} تست</span>}
-      </div>
-      {item.note && <p className="ws-card-note">{item.note}</p>}
-      <div className="ws-card-actions">
-        <button type="button" onClick={onEdit}>ویرایش</button>
-        <button type="button" onClick={onDuplicate}>تکثیر</button>
-        <button type="button" onClick={onMove}>جابه‌جایی</button>
+      <strong className="ws-box-title" title={title}>{title}</strong>
+      {sub && <span className="ws-box-sub" title={sub}>{sub}</span>}
+      <span className="ws-box-meta">{item.planned_duration_minutes ? formatDuration(item.planned_duration_minutes) : ""}{item.test_count ? ` · ${toFaDigits(String(item.test_count))} تست` : ""}</span>
+      <div className="ws-box-actions">
+        <button type="button" aria-label="ویرایش" onClick={onEdit}>✎</button>
+        <button type="button" aria-label="کپی" onClick={onDuplicate}>⧉</button>
+        <button type="button" aria-label="افزودن توضیحات" onClick={onAddNote}>＋</button>
         <details className="ws-more">
-          <summary aria-label="گزینه‌های بیشتر">⋯</summary>
+          <summary aria-label="بیشتر">⋯</summary>
+          <button type="button" onClick={onMove}>جابه‌جایی</button>
           <button type="button" onClick={onDelete}>حذف</button>
         </details>
       </div>
@@ -337,7 +528,7 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
   const [plans, setPlans] = useState<Plan[]>([]);
   const [planId, setPlanId] = useState<number | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);
-  const [weekStart, setWeekStart] = useState(currentWeekStart);
+  const [weekStart, setWeekStart] = useState(tehranTodayISO);
   const [title, setTitle] = useState("");
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [quickAddDay, setQuickAddDay] = useState<string | null>(null);
@@ -349,7 +540,17 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const today = tehranTodayIso();
+  const today = tehranTodayISO();
+  const [mode, setMode] = useState<"day"|"week">("day"); // eslint-disable-line @typescript-eslint/no-unused-vars
+  const [activeDay, setActiveDay] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [showBacklog, setShowBacklog] = useState(true);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [showContext, setShowContext] = useState(true);
+  const [commitments, setCommitments] = useState<Commitment[]>([]); // eslint-disable-line @typescript-eslint/no-unused-vars
+  const [copySource, setCopySource] = useState<PlanDay | null>(null);
+  const [copyConfirm, setCopyConfirm] = useState<{target: PlanDay, mode: "append"|"replace"} | null>(null);
+  const [copyBusy, setCopyBusy] = useState(false);
 
   // URL state
   useEffect(() => {
@@ -388,6 +589,8 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
         else if (!q.has("new") && own.length) setPlanId(own[0].id);
         // fetch academic tree once
         fetchAcademicTree(token, { student: String(s.id) }).then((t) => { if (live) setTree(t); }).catch(()=>{});
+        // fetch fixed commitments for timeline
+        api<Commitment[]>(`/planning/commitments/?student=${s.id}`, token).then((cs)=>{ if(live) setCommitments(cs.filter(c=>c.active)); }).catch(()=>{});
       })
       .catch((r) => { if (live) setError(apiErrorMessage(r)); })
       .finally(() => { if (live) setLoading(false); });
@@ -401,6 +604,14 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
     setPlan(p);
     setPlans((cur) => cur.map((x) => (x.id === id ? p : x)));
   }, [planId, token]);
+
+  // sync activeDay to first day of plan
+  useEffect(() => {
+    if (plan && plan.days && plan.days.length && !activeDay) {
+      const sorted = [...plan.days].sort((a,b)=> a.date.localeCompare(b.date));
+      queueMicrotask(()=> setActiveDay(sorted[0].date));
+    }
+  }, [plan, activeDay]);
 
   useEffect(() => {
     if (!planId) return;
@@ -419,7 +630,8 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
       const end = new Date(`${weekStart}T12:00:00`);
       end.setDate(end.getDate() + 6);
       const endDate = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2,"0")}-${String(end.getDate()).padStart(2,"0")}`;
-      const created = await api<Plan>("/planning/plans/", token, "POST", { student: student.id, start_date: weekStart, end_date: endDate, title });
+      const effectiveTitle = title.trim() || planTitleSuggestion(weekStart, endDate);
+      const created = await api<Plan>("/planning/plans/", token, "POST", { student: student.id, start_date: weekStart, end_date: endDate, title: effectiveTitle });
       setPlans((c) => [created, ...c]); setPlanId(created.id); setPlan(created); setTitle(""); notify(setNotice, "برنامه هفتگی ساخته شد.");
     } catch (r) { setError(apiErrorMessage(r)); } finally { setBusy(false); }
   }
@@ -493,7 +705,7 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
       return next;
     });
     try {
-      await api(`/planning/items/${moveItem.id}/move/`, token, "POST", { target_day: targetDay!.id });
+      await api(`/planning/items/${moveItem.id}/move/`, token, "POST", { target_day: targetDay!.id, start_time: moveItem.start_time || undefined });
       await refresh();
       setMoveItem(null); setMoveTarget("");
       notify(setNotice, "جابه‌جایی انجام شد.");
@@ -541,6 +753,45 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
     }
   }
 
+  // Copy Day handlers — قانون اصلی: تمام ۷ روز همیشه فعال، کپی از هر روز به هر ۶ روز دیگر با یک کلیک (append) بدون تایید دوم
+  function startCopy(day: PlanDay){ setCopySource(day); setCopyConfirm(null); setError(""); notify(setNotice, "روز مقصد را انتخاب کنید — روی کادر هر روز دیگری کلیک کنید تا فوراً کپی شود"); }
+  function cancelCopy(){ setCopySource(null); setCopyConfirm(null); }
+  async function executeCopy(target: PlanDay, mode: "append"|"replace"){
+    if(!copySource) return;
+    setCopyBusy(true); setError("");
+    try {
+      await api(`/planning/days/${copySource.id}/copy-day/`, token, "POST", { target_day: target.id, mode });
+      await refresh();
+      notify(setNotice, "برنامه با موفقیت کپی شد");
+      setCopySource(null); setCopyConfirm(null);
+    } catch(reason: unknown){
+      const msg = planningError(reason);
+      setError(msg);
+    } finally { setCopyBusy(false); }
+  }
+  // کلیک روی کادر روز مقصد → فوراً append کپی (بدون مودال). برای روز خالی ابتدا PlanDay ساخته می‌شود.
+  async function handleCopyTargetClick(date: string, existingDay?: PlanDay | null){
+    if(!copySource || copyBusy) return;
+    if(existingDay && copySource.id === existingDay.id) return;
+    // اگر همان تاریخ مبدأ باشد کپی نکن
+    if(copySource.date === date) return;
+    let target = existingDay || null;
+    if(!target){
+      const created = await ensureDay(date);
+      if(!created) { setError("ساخت روز مقصد ناموفق بود."); return; }
+      target = created;
+    }
+    // بدون پرسش جایگزینی — همیشه append فوری طبق الزام محصول
+    await executeCopy(target, "append");
+  }
+  // Escape to cancel copy
+  useEffect(()=>{
+    if(!copySource) return;
+    function onKey(e: KeyboardEvent){ if(e.key==="Escape") cancelCopy(); }
+    window.addEventListener("keydown", onKey);
+    return ()=> window.removeEventListener("keydown", onKey);
+  }, [copySource]);
+
   // DnD handlers
   function onDragStart(e: React.DragEvent, itemId: number) {
     e.dataTransfer.setData("text/plain", String(itemId));
@@ -585,6 +836,36 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
     }
   }
 
+
+
+  const [showNewPlan, setShowNewPlan] = useState(false);
+  // open modal if ?new=1
+  useEffect(()=>{
+    const q=new URLSearchParams(window.location.search);
+    if(q.get("new")==="1") queueMicrotask(()=> setShowNewPlan(true));
+  },[]);
+  // reuse MetricsBar data as metrics prop (lifted via state)
+  const [topMetrics, setTopMetrics] = useState<{plannedMinutes:number; actualMinutes:number; plannedTests:number; actualTests:number; completion:number|null}|null>(null);
+  // mirror MetricsBar fetch into topMetrics (lightweight)
+  useEffect(()=>{
+    if(!plan?.id){ queueMicrotask(()=> setTopMetrics(null)); return; }
+    const plannedMinutes=(plan.days||[]).flatMap(d=>d.items).reduce((a,i)=>a+(i.planned_duration_minutes||0),0);
+    const plannedTests=(plan.days||[]).flatMap(d=>d.items).reduce((a,i)=>a+(i.test_count||0),0);
+    let live=true;
+    api<unknown>(`/counselor/students/${plan.student}/progress/?start_date=${plan.start_date}&end_date=${plan.end_date}`, token).then((res: unknown)=>{
+      if(!live) return;
+      const r=res as {planned_items?:{actual_minutes:number|null; actual_tests:number|null; status:string}[]};
+      if(r && Array.isArray(r.planned_items)){
+        const actualMinutes=r.planned_items.reduce((a:number,it:{actual_minutes:number|null})=>a+(it.actual_minutes||0),0);
+        const actualTests=r.planned_items.reduce((a:number,it:{actual_tests:number|null})=>a+(it.actual_tests||0),0);
+        const comp = r.planned_items.length ? Math.round(r.planned_items.filter((it:{status:string})=>it.status==="COMPLETED").length*100/r.planned_items.length) : null;
+        setTopMetrics({plannedMinutes, actualMinutes, plannedTests, actualTests, completion: comp});
+      } else setTopMetrics({plannedMinutes, actualMinutes:0, plannedTests, actualTests:0, completion:null});
+    }).catch(()=>{ if(live) setTopMetrics({plannedMinutes, actualMinutes:0, plannedTests, actualTests:0, completion:null});});
+    return()=>{live=false;};
+  },[plan, token]);
+
+  const days = plan ? sevenDayRange(plan.start_date) : [];
   if (loading) {
     return (
       <main className="ws-shell">
@@ -593,38 +874,65 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
       </main>
     );
   }
-
-  const days = plan ? weekDates(plan.start_date, plan.end_date) : [];
   return (
     <main className="ws-shell">
       <Link href={`/counselor/students/${studentId}`} className="ws-back">← بازگشت به فضای دانش‌آموز</Link>
       {error && <p className="ws-error" role="alert">{error}</p>}
       {notice && <p className="ws-notice" role="status">{notice}</p>}
-      {student && <StudentPlanningHeader student={student} plan={plan} counselorName={user.first_name || user.username} />}
-      {plan && <MetricsBar plan={plan} token={token} />}
-
-      <section className="ws-toolbar">
-        <form onSubmit={createPlan} className="ws-toolbar-form">
-          <h2>برنامه جدید</h2>
-          <label>شروع هفته<input type="date" required value={weekStart} onChange={(e) => setWeekStart(e.target.value)} /></label>
-          <label>عنوان<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="برنامه این هفته" /></label>
-          <button disabled={busy}>{busy ? "در حال ساخت…" : "ساخت برنامه ۷ روزه"}</button>
-        </form>
-        {plans.length > 0 && (
-          <label className="ws-plan-select">برنامه
-            <select value={planId || ""} onChange={(e) => { setPlan(null); setPlanId(Number(e.target.value)); }}>
-              <option value="" disabled>انتخاب برنامه</option>
-              {plans.map((p) => <option key={p.id} value={p.id}>{p.title || persianDate(p.start_date)} · {p.status === "DRAFT" ? "پیش‌نویس" : "منتشرشده"}</option>)}
-            </select>
-          </label>
-        )}
-        {plan && (
-          <div className="ws-actions">
-            <button type="button" onClick={async () => { try { await downloadPlanExport(plan.id, "pdf", token);} catch(r){ setError(apiErrorMessage(r)); }}}>دریافت PDF</button>
-            <button type="button" onClick={async () => { try { await downloadPlanExport(plan.id, "excel", token);} catch(r){ setError(apiErrorMessage(r)); }}}>دریافت اکسل</button>
+      {student && (
+        <section className="ws-top" aria-label="خلاصه و کنترل برنامه">
+          <div className="ws-top-main">
+            <StudentPlanningHeader student={student} plan={plan} counselorName={user.first_name || user.username} metrics={topMetrics} />
+            <TopChart plan={plan} />
           </div>
-        )}
-      </section>
+          <div className="ws-toolbar">
+            <div className="ws-toolbar-plan">
+              {plan ? <span className="ws-toolbar-plan-name">{plan.title || `${persianDate(plan.start_date)} تا ${persianDate(plan.end_date)}`}</span> : <span style={{fontSize:".85rem",color:"#5a6d76"}}>برنامه‌ای انتخاب نشده</span>}
+              {plan && <span className={`ws-status ${plan.status==="PUBLISHED"?"is-published":""}`}>{plan.status==="DRAFT"?"پیش‌نویس":"منتشرشده"}</span>}
+              {plans.length>1 && (
+                <select className="ws-plan-select" value={planId||""} onChange={(e)=>{ setPlan(null); setPlanId(Number(e.target.value));}} aria-label="انتخاب برنامه">
+                  {plans.map((p)=><option key={p.id} value={p.id}>{p.title || `${persianDate(p.start_date)} تا ${persianDate(p.end_date)}`}</option>)}
+                </select>
+              )}
+            </div>
+            <div className="ws-toolbar-actions">
+              {plan && <><button type="button" onClick={async()=>{ try{ await downloadPlanExport(plan.id,"excel",token);}catch(r){ setError(apiErrorMessage(r));}}}>Excel</button><button type="button" onClick={async()=>{ try{ await downloadPlanExport(plan.id,"pdf",token);}catch(r){ setError(apiErrorMessage(r));}}}>PDF</button></>}
+              <button type="button" className="ws-toolbar-new" onClick={()=> setShowNewPlan(true)}>＋ برنامه جدید</button>
+            </div>
+          </div>
+        </section>
+      )}
+      {copySource && (
+        <div className="ws-copy-banner" role="status">
+          <span>«{persianDate(copySource.date)}» به‌عنوان مبدأ انتخاب شد — روز مقصد را انتخاب کنید</span>
+          <button type="button" className="ws-subtle" onClick={cancelCopy}>لغو کپی (Esc)</button>
+        </div>
+      )}
+      {/* New plan modal (no longer always visible) */}
+      {showNewPlan && (
+        <div className="ws-modal" role="dialog" aria-modal="true" aria-label="برنامه جدید" onClick={()=> setShowNewPlan(false)}>
+          <div className="ws-modal-card" onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <h3 style={{fontSize:".9rem",fontWeight:700}}>برنامه جدید</h3>
+              <button type="button" className="ws-subtle" onClick={()=> setShowNewPlan(false)}>✕</button>
+            </div>
+            <form onSubmit={async(e)=>{ await createPlan(e); setShowNewPlan(false); }} style={{display:"grid",gap:".6rem"}}>
+              <div className="ws-date-picker">
+                <label>شروع برنامه
+                  <input type="date" required value={weekStart} onChange={(e)=> setWeekStart(e.target.value)} />
+                  <small>{formatJalaliShort(weekStart)} — تا {formatJalaliShort(addDaysISO(weekStart,6))}</small>
+                </label>
+                <div className="ws-date-quick">
+                  <button type="button" onClick={()=> setWeekStart(tehranTodayISO())}>امروز — {formatJalaliShort(tehranTodayISO())}</button>
+                  <button type="button" onClick={()=> setWeekStart(tehranTomorrowISO())}>فردا — {formatJalaliShort(tehranTomorrowISO())}</button>
+                </div>
+              </div>
+              <label style={{display:"grid",gap:".2rem",fontSize:".82rem"}}>عنوان (اختیاری)<input value={title} onChange={(e)=> setTitle(e.target.value)} placeholder={planTitleSuggestion(weekStart, addDaysISO(weekStart,6))} /></label>
+              <button type="submit" disabled={busy} className="ws-primary">{busy ? "در حال ساخت…" : "ساخت برنامه ۷ روزه"}</button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {!plan && !loading && <div className="ws-empty"><p>هنوز فعالیتی برای این هفته ثبت نشده.</p><button className="ws-primary" onClick={() => document.getElementById("ws-create-trigger")?.scrollIntoView({behavior:"smooth"})}>اولین فعالیت را اضافه کن</button></div>}
 
@@ -638,46 +946,71 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
             <button className={!selectedDay ? "is-active" : ""} onClick={() => setSelectedDay(null)}>همه روزها</button>
           </nav>
 
-          <div className="ws-week">
+          <div className="ws-stack" aria-label="روزهای هفته">
             {days.filter((d) => !selectedDay || d === selectedDay).map((date) => {
               const day = plan.days?.find((x) => x.date === date);
               const items = day?.items ? [...day.items].sort((a,b)=> a.ordering - b.ordering) : [];
+              const mins = items.reduce((a,i)=> a+(i.planned_duration_minutes||0),0);
+              const tests = items.reduce((a,i)=> a+(i.test_count||0),0);
+              const h=Math.floor(mins/60), m=mins%60;
+              const freeHint = ""; // free time computed via commitments if needed
+              const isCopySource = !!copySource && copySource.date === date;
+              const isCopyTarget = !!copySource && copySource.date !== date;
               return (
                 <section
                   key={date}
-                  className={`ws-day ${date === today ? "is-today" : ""} ${date < today ? "is-past" : ""}`}
+                  className={`ws-day-row ${date === today ? "is-today" : ""} ${date < today ? "is-past" : ""} ${isCopySource ? "is-copy-source" : ""} ${isCopyTarget ? "is-copy-target" : ""}`}
                   onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    // if no items, treat as append
-                    if (!day) {
-                      // create day then move? skip: need day id - handle via ensureDay
-                    } else onDrop(e, day);
-                  }}
+                  onDrop={(e) => { if(day) onDrop(e, day); }}
+                  onClick={() => { if(copySource && copySource.date !== date) handleCopyTargetClick(date, day || null); }}
+                  style={isCopyTarget ? {cursor:"pointer"} : undefined}
+                  aria-disabled={false}
                 >
-                  <header className="ws-day-head">
-                    <div>
-                      {date < today && <span className="ws-badge-past">گذشته — فقط مشاهده</span>}
+                  <header
+                    className="ws-day-row-head"
+                    style={isCopyTarget ? {cursor:"pointer"} : undefined}
+                  >
+                    <div className="ws-day-row-title">
+                      {date < today && <span className="ws-badge-past">گذشته</span>}
                       {date === today && <span className="ws-badge-today">امروز</span>}
                       <h3>{persianDate(date)}</h3>
-                      <small dir="ltr">{date}</small>
+                      <small>{formatJalaliShort(date)}</small>
                     </div>
-                    <button
-                      className="ws-add"
-                      onClick={async () => {
-                        if (!day) {
-                          const nd = await ensureDay(date);
-                          if (nd) setQuickAddDay(date);
-                        } else setQuickAddDay(quickAddDay === date ? null : date);
-                      }}
-                      aria-label={`افزودن فعالیت برای ${date}`}
-                      disabled={date < today}
-                    >
-                      + افزودن
-                    </button>
+                    <div className="ws-day-row-summary">
+                      <span><b>{toFaDigits(String(items.length))}</b> فعالیت</span>
+                      <span><b>{toFaDigits(String(h))}:{toFaDigits(String(m).padStart(2,"0"))}</b> مطالعه</span>
+                      <span><b>{toFaDigits(String(tests))}</b> تست</span>
+                      {freeHint && <span className="ws-free">{freeHint}</span>}
+                    </div>
+                    <div style={{display:"flex",gap:".3rem",alignItems:"center"}}>
+                      <button
+                        type="button"
+                        className="ws-copy"
+                        aria-label={`کپی ${persianDate(date)}`}
+                        disabled={!day || (!!copySource && copySource.date===date)}
+                        onClick={(e)=>{ e.stopPropagation(); if(day) startCopy(day); }}
+                        title={day ? "کپی این روز به روز دیگر (یک کلیک روی مقصد)" : "روز خالی — چیزی برای کپی ندارد"}
+                      >⧉</button>
+                      <button
+                        type="button"
+                        className="ws-add"
+                        disabled={false}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!day) {
+                            const nd = await ensureDay(date);
+                            if (nd) setQuickAddDay(date);
+                          } else setQuickAddDay(quickAddDay === date ? null : date);
+                        }}
+                        aria-label={`افزودن باکس برای ${date}`}
+                      >
+                        ＋ افزودن باکس
+                      </button>
+                    </div>
                   </header>
 
-                  <div className="ws-day-items" onDragOver={(e)=>e.preventDefault()}>
-                    {items.length === 0 ? <p className="ws-empty-text">فعالیتی ثبت نشده.</p> : items.map((item, idx) => (
+                  <div className="ws-boxes" onDragOver={(e)=>e.preventDefault()} onClick={(e)=>{ if(copySource) e.stopPropagation(); }}>
+                    {items.length === 0 ? <span className="ws-boxes-empty">فعالیتی ثبت نشده</span> : items.map((item, idx) => (
                       <div key={item.id} onDragOver={(e)=>e.preventDefault()} onDrop={(e)=> onDrop(e, day!, idx)}>
                         <PlanActivityCard
                           item={item}
@@ -689,8 +1022,8 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
                           onDuplicate={() => handleDuplicate(item)}
                           onMove={() => { setMoveItem(item); setMoveTarget(date); }}
                           onDelete={() => handleDelete(item)}
+                          onAddNote={() => setEditingItem(item)}
                         />
-                        {/* reorder handle fallback */}
                         {item.counselor_editable && items.length > 1 && (
                           <div className="ws-reorder">
                             <button aria-label="بالا" disabled={idx===0} onClick={()=> handleReorder(day!, item.id, idx-1)}>↑</button>
@@ -699,18 +1032,16 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
                         )}
                       </div>
                     ))}
-                    {/* drop at end */}
                     {day && items.length>0 && <div className="ws-drop-end" onDragOver={(e)=>e.preventDefault()} onDrop={(e)=> onDrop(e, day, items.length)}>رها کنید تا به انتها اضافه شود</div>}
                   </div>
 
                   {quickAddDay === date && tree && day && (
-                    <QuickAdd
+                    <WizardAddBox
                       token={token}
-                      student={student!}
                       dayId={day.id}
                       ordering={items.length}
                       tree={tree}
-                      onCreated={async () => { setQuickAddDay(null); await refresh(); notify(setNotice, "فعالیت اضافه شد."); }}
+                      onCreated={async () => { setQuickAddDay(null); await refresh(); notify(setNotice, "باکس ساخته شد."); }}
                       onError={setError}
                       onCancel={() => setQuickAddDay(null)}
                     />
@@ -742,6 +1073,20 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
         </div>
       )}
 
+      {copyConfirm && (
+        <div className="ws-modal" role="dialog" aria-modal="true" aria-label="کپی روز">
+          <div className="ws-modal-card">
+            <h3>روز «{persianDate(copyConfirm.target.date)}» {copyConfirm.target.items.length} فعالیت دارد</h3>
+            <p style={{fontSize:".82rem",color:"#5a6d76"}}>می‌خواهید فعالیت‌های «{copySource ? persianDate(copySource.date) : ""}» را چگونه کپی کنید؟</p>
+            <div style={{display:"grid",gap:".5rem"}}>
+              <button type="button" className="ws-primary" disabled={copyBusy} onClick={()=> executeCopy(copyConfirm.target, "append")}>افزودن به فعالیت‌های موجود</button>
+              <button type="button" style={{border:"1px solid #c0392b",color:"#c0392b",background:"white",borderRadius:".35rem",padding:".45rem .7rem"}} disabled={copyBusy} onClick={()=> { if(window.confirm("جایگزینی باعث حذف فعالیت‌های فعلی روز مقصد می‌شود. ادامه می‌دهید؟ اگر فعالیت‌ها دارای اجرای ثبت‌شده باشند جایگزینی انجام نخواهد شد.")) executeCopy(copyConfirm.target, "replace"); }}>جایگزینی کامل (با تأیید)</button>
+              <button type="button" className="ws-subtle" onClick={()=> setCopyConfirm(null)}>انصراف</button>
+            </div>
+            {copyBusy && <span style={{fontSize:".78rem"}}>در حال کپی…</span>}
+          </div>
+        </div>
+      )}
       {moveItem && plan && (
         <div className="ws-modal" role="dialog" aria-modal="true" aria-label="انتقال فعالیت">
           <div className="ws-modal-card">
