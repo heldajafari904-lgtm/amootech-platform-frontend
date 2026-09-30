@@ -54,11 +54,55 @@ function ProfileTab({ student, commitments }: { student: Student; commitments: C
   return <div className="workspace-stack"><section className="workspace-panel"><h2>اطلاعات تحصیلی</h2><dl className="workspace-profile"><div><dt>نام</dt><dd>{student.user.first_name} {student.user.last_name}</dd></div><div><dt>پایه</dt><dd>{student.grade_name || "ثبت نشده"}</dd></div><div><dt>رشته</dt><dd>{student.field_name || "ثبت نشده"}</dd></div><div><dt>مدرسه</dt><dd>{student.school_name || "ثبت نشده"}</dd></div></dl></section><section className="workspace-panel"><h2>تعهدهای ثابت</h2>{commitments.filter((item) => item.active).length ? <div className="workspace-commitments">{commitments.filter((item) => item.active).map((item) => <div key={item.id}><strong>{commitmentLabel[item.kind]} · {item.title}</strong><span>{weekdays[item.weekday]}، {timeText(item.start_time)} تا {timeText(item.end_time)}</span></div>)}</div> : <p className="workspace-empty-text">تعهد ثابتی ثبت نشده است.</p>}</section></div>;
 }
 
+function TelegramCard({ id, token }: { id: string; token: string }) {
+  const [status, setStatus] = useState<{group:{connected:boolean;chat_title:string|null;chat_id:number|null};student:{connected:boolean;telegram_username:string|null}} | null>(null);
+  const [link, setLink] = useState<{url:string;expires_at:string}|null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
+  const fetchStatus = useCallback(async () => {
+    try { const s = await api<typeof status>(`/students/${id}/telegram/status/`, token); setStatus(s); } catch { /* ignore */ }
+  }, [id, token]);
+  useEffect(() => { void fetchStatus(); }, [fetchStatus]); // eslint-disable-line react-hooks/set-state-in-effect
+  async function createLink() {
+    setLoading(true); setError("");
+    try {
+      const res = await api<{url:string;expires_at:string;status:string}>(`/students/${id}/telegram/group-link/`, token, "POST", {});
+      setLink({url: res.url, expires_at: res.expires_at});
+    } catch (reason) { setError(errorMessage(reason)); } finally { setLoading(false); }
+  }
+  async function disconnect() {
+    if (!confirm("اتصال گروه قطع شود؟")) return;
+    setLoading(true); setError("");
+    try { await api(`/students/${id}/telegram/group/`, token, "DELETE"); setLink(null); await fetchStatus(); } catch (reason) { setError(errorMessage(reason)); } finally { setLoading(false); }
+  }
+  async function copyLink() {
+    if (!link) return;
+    try { await navigator.clipboard.writeText(link.url); setCopied(true); setTimeout(()=>setCopied(false), 2000); } catch { setError("کپی انجام نشد."); }
+  }
+  return <section className="workspace-panel"><h2>تلگرام</h2><p className="planning-error" role="alert">{error}</p>
+    <div style={{display:"grid",gap:".4rem",fontSize:".85rem"}}>
+      <div>گروه: {status ? (status.group.connected ? `متصل${status.group.chat_title ? ` — ${status.group.chat_title}` : ""}` : "متصل نیست") : "—"}</div>
+      <div>دانش‌آموز: {status ? (status.student.connected ? `متصل${status.student.telegram_username ? ` — @${status.student.telegram_username}` : ""}` : "متصل نیست") : "—"}</div>
+    </div>
+    {!status?.group.connected && <button type="button" disabled={loading} onClick={createLink} style={{marginTop:".6rem"}}>{loading ? "در حال ساخت…" : "ایجاد لینک اتصال گروه"}</button>}
+    {link && <div style={{display:"grid",gap:".4rem",marginTop:".6rem",padding:".6rem",background:"#f8fafb",border:"1px solid #dce3e8",borderRadius:".45rem"}}>
+      <a href={link.url} target="_blank" rel="noopener noreferrer" style={{wordBreak:"break-all",color:"#0e6477"}}>{link.url}</a>
+      <small style={{color:"#5a6d76"}}>انقضا: {new Date(link.expires_at).toLocaleString("fa-IR")}</small>
+      <div style={{display:"flex",gap:".4rem"}}>
+        <a href={link.url} target="_blank" rel="noopener noreferrer"><button type="button">باز کردن در تلگرام</button></a>
+        <button type="button" onClick={copyLink}>{copied ? "کپی شد!" : "کپی لینک"}</button>
+      </div>
+    </div>}
+    {status?.group.connected && <button type="button" disabled={loading} onClick={disconnect} style={{marginTop:".6rem",color:"#a12626",borderColor:"#eccccc"}}>قطع اتصال گروه</button>}
+  </section>;
+}
+
 export default function CounselorStudentDetail({ id }: { id: string }) {
   const { token } = useCounselor(); const [student, setStudent] = useState<Student | null>(null); const [commitments, setCommitments] = useState<Commitment[]>([]); const [plans, setPlans] = useState<Plan[]>([]); const [progress, setProgress] = useState<CounselorProgress | null>(null); const [tab, setTab] = useState<Tab>("overview"); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
   const load = useCallback(async () => { const [studentData, commitmentsData, plansData, progressData] = await Promise.all([api<Student>(`/students/${id}/`, token), allPages<Commitment>(`/planning/commitments/?student=${id}`, token), allPages<Plan>(`/planning/plans/?student=${id}`, token), api<CounselorProgress>(`/counselor/students/${id}/progress/`, token)]); setStudent(studentData); setCommitments(commitmentsData); setPlans(plansData); setProgress(progressData); }, [id, token]);
   useEffect(() => { void Promise.resolve().then(load).catch((reason) => setError(errorMessage(reason))).finally(() => setLoading(false)); }, [load]);
   const currentPlan = useMemo(() => { const today = tehranTodayIso(); return plans.find((plan) => plan.status === "PUBLISHED" && plan.start_date <= today && plan.end_date >= today); }, [plans]);
   if (loading) return <main className="planning-content"><p>در حال آماده‌سازی فضای دانش‌آموز…</p></main>;
-  return <main className="planning-content student-workspace"><Link href="/counselor/students">← دانش‌آموزان</Link><p className="planning-error" role="alert">{error}</p>{student && progress && <><header className="workspace-header"><div><p className="workspace-eyebrow">فضای کار دانش‌آموز</p><h1>{student.user.first_name} {student.user.last_name}</h1><p>{student.grade_name || "پایه نامشخص"} · {student.field_name || "رشته نامشخص"}{student.school_name && ` · ${student.school_name}`}</p><small>{currentPlan ? `برنامه جاری: ${persianDate(currentPlan.start_date)} تا ${persianDate(currentPlan.end_date)} · منتشرشده` : plans.some((plan) => plan.status === "DRAFT") ? "برنامه جدید هنوز منتشر نشده" : "برای این دانش‌آموز هنوز برنامه فعالی ثبت نشده است."}</small></div><Link className="planning-primary" href={`/counselor/students/${id}/planning?new=1`}>+ نوشتن برنامه جدید</Link></header><nav className="workspace-tabs" aria-label="بخش‌های فضای دانش‌آموز">{tabs.map((item) => <button data-tab={item.id} className={tab === item.id ? "is-active" : ""} key={item.id} onClick={() => setTab(item.id)}>{item.label}</button>)}</nav>{tab === "overview" && <Overview id={id} progress={progress} currentPlan={currentPlan}/>} {tab === "plans" && <PlansTab id={id} plans={plans} progress={progress} token={token} reload={load}/>} {tab === "reports" && <ReportsTab id={id} token={token}/>} {tab === "progress" && <ProgressTab progress={progress}/>} {tab === "profile" && <ProfileTab student={student} commitments={commitments}/>}</>}</main>;
+  return <main className="planning-content student-workspace"><Link href="/counselor/students">← دانش‌آموزان</Link><p className="planning-error" role="alert">{error}</p>{student && progress && <><header className="workspace-header"><div><p className="workspace-eyebrow">فضای کار دانش‌آموز</p><h1>{student.user.first_name} {student.user.last_name}</h1><p>{student.grade_name || "پایه نامشخص"} · {student.field_name || "رشته نامشخص"}{student.school_name && ` · ${student.school_name}`}</p><small>{currentPlan ? `برنامه جاری: ${persianDate(currentPlan.start_date)} تا ${persianDate(currentPlan.end_date)} · منتشرشده` : plans.some((plan) => plan.status === "DRAFT") ? "برنامه جدید هنوز منتشر نشده" : "برای این دانش‌آموز هنوز برنامه فعالی ثبت نشده است."}</small></div><Link className="planning-primary" href={`/counselor/students/${id}/planning?new=1`}>+ نوشتن برنامه جدید</Link></header><TelegramCard id={id} token={token}/><nav className="workspace-tabs" aria-label="بخش‌های فضای دانش‌آموز">{tabs.map((item) => <button data-tab={item.id} className={tab === item.id ? "is-active" : ""} key={item.id} onClick={() => setTab(item.id)}>{item.label}</button>)}</nav>{tab === "overview" && <Overview id={id} progress={progress} currentPlan={currentPlan}/>} {tab === "plans" && <PlansTab id={id} plans={plans} progress={progress} token={token} reload={load}/>} {tab === "reports" && <ReportsTab id={id} token={token}/>} {tab === "progress" && <ProgressTab progress={progress}/>} {tab === "profile" && <ProfileTab student={student} commitments={commitments}/>}</>}</main>;
 }
