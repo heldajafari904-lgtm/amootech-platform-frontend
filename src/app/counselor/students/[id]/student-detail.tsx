@@ -55,13 +55,22 @@ function ProfileTab({ student, commitments }: { student: Student; commitments: C
 }
 
 function TelegramCard({ id, token }: { id: string; token: string }) {
-  const [status, setStatus] = useState<{group:{connected:boolean;chat_title:string|null;chat_id:number|null};student:{connected:boolean;telegram_username:string|null}} | null>(null);
+  const [status, setStatus] = useState<{connection:{group_connected:boolean;student_connected:boolean;chat_title:string|null;telegram_username:string|null};access:{enabled:boolean;suspended:boolean;banned:boolean};group:{locked:boolean};bot:{reachable:boolean;last_activity_at:string|null;last_error_at:string|null;last_error_message:string|null}} | null>(null);
   const [link, setLink] = useState<{url:string;expires_at:string}|null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const fetchStatus = useCallback(async () => {
-    try { const s = await api<typeof status>(`/students/${id}/telegram/status/`, token); setStatus(s); } catch { /* ignore */ }
+    // Try new admin-style status first (counselor owner path), fallback to old
+    try {
+      const s = await api<typeof status>(`/admin/students/${id}/telegram/`, token);
+      setStatus(s as unknown as typeof status);
+      return;
+    } catch { /* fallback */ }
+    try {
+      const legacy = await api<{group:{connected:boolean;chat_title:string|null;chat_id:number|null};student:{connected:boolean;telegram_username:string|null}}>(`/students/${id}/telegram/status/`, token);
+      setStatus({ connection: { group_connected: legacy.group.connected, student_connected: legacy.student.connected, chat_title: legacy.group.chat_title, telegram_username: legacy.student.telegram_username }, access: { enabled: true, suspended: false, banned: false }, group: { locked: false }, bot: { reachable: false, last_activity_at: null, last_error_at: null, last_error_message: null } });
+    } catch { /* ignore */ }
   }, [id, token]);
   useEffect(() => { void fetchStatus(); }, [fetchStatus]); // eslint-disable-line react-hooks/set-state-in-effect
   async function createLink() {
@@ -80,12 +89,18 @@ function TelegramCard({ id, token }: { id: string; token: string }) {
     if (!link) return;
     try { await navigator.clipboard.writeText(link.url); setCopied(true); setTimeout(()=>setCopied(false), 2000); } catch { setError("کپی انجام نشد."); }
   }
+  async function resendPlan() {
+    setLoading(true); setError("");
+    try { await api(`/admin/students/${id}/telegram/resend-plan/`, token, "POST", {}); setError("✅ ارسال مجدد انجام شد."); } catch (reason) { setError(errorMessage(reason)); } finally { setLoading(false); }
+  }
+  const conn = status?.connection; const access = status?.access; const bot = status?.bot;
   return <section className="workspace-panel"><h2>تلگرام</h2><p className="planning-error" role="alert">{error}</p>
     <div style={{display:"grid",gap:".4rem",fontSize:".85rem"}}>
-      <div>گروه: {status ? (status.group.connected ? `متصل${status.group.chat_title ? ` — ${status.group.chat_title}` : ""}` : "متصل نیست") : "—"}</div>
-      <div>دانش‌آموز: {status ? (status.student.connected ? `متصل${status.student.telegram_username ? ` — @${status.student.telegram_username}` : ""}` : "متصل نیست") : "—"}</div>
+      <div>گروه: {conn ? (conn.group_connected ? `متصل${conn.chat_title ? ` — ${conn.chat_title}` : ""}` : "متصل نیست") : "—"}</div>
+      <div>دانش‌آموز: {conn ? (conn.student_connected ? `متصل${conn.telegram_username ? ` — @${conn.telegram_username}` : ""}` : "متصل نیست") : "—"}</div>
+      {bot && <><div>آخرین فعالیت: {bot.last_activity_at ? new Date(bot.last_activity_at).toLocaleString("fa-IR") : "—"}</div><div>آخرین خطا: {bot.last_error_message || "—"}</div><div>ربات: {bot.reachable ? "Online" : "Unavailable"}</div></>}
     </div>
-    {!status?.group.connected && <button type="button" disabled={loading} onClick={createLink} style={{marginTop:".6rem"}}>{loading ? "در حال ساخت…" : "ایجاد لینک اتصال گروه"}</button>}
+    {!conn?.group_connected && <button type="button" disabled={loading} onClick={createLink} style={{marginTop:".6rem"}}>{loading ? "در حال ساخت…" : "ایجاد لینک اتصال گروه"}</button>}
     {link && <div style={{display:"grid",gap:".4rem",marginTop:".6rem",padding:".6rem",background:"#f8fafb",border:"1px solid #dce3e8",borderRadius:".45rem"}}>
       <a href={link.url} target="_blank" rel="noopener noreferrer" style={{wordBreak:"break-all",color:"#0e6477"}}>{link.url}</a>
       <small style={{color:"#5a6d76"}}>انقضا: {new Date(link.expires_at).toLocaleString("fa-IR")}</small>
@@ -94,7 +109,8 @@ function TelegramCard({ id, token }: { id: string; token: string }) {
         <button type="button" onClick={copyLink}>{copied ? "کپی شد!" : "کپی لینک"}</button>
       </div>
     </div>}
-    {status?.group.connected && <button type="button" disabled={loading} onClick={disconnect} style={{marginTop:".6rem",color:"#a12626",borderColor:"#eccccc"}}>قطع اتصال گروه</button>}
+    {conn?.group_connected && <button type="button" disabled={loading} onClick={disconnect} style={{marginTop:".6rem",color:"#a12626",borderColor:"#eccccc"}}>قطع اتصال گروه</button>}
+    <button type="button" disabled={loading} onClick={resendPlan} style={{marginTop:".6rem"}}>ارسال مجدد برنامه امروز</button>
   </section>;
 }
 
