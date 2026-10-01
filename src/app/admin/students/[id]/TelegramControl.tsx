@@ -20,12 +20,10 @@ export default function TelegramControl({ studentId, token }: { studentId: strin
   const [loading, setLoading] = useState<string | null>(null);
   const [showAudit, setShowAudit] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      const s = await api<TelegramStatus>(`/admin/students/${studentId}/telegram/`, token);
-      setStatus(s);
-    } catch (e) { setError(errorMessage(e)); }
-  }, [studentId, token]);
+  const load = useCallback(
+    () => api<TelegramStatus>(`/admin/students/${studentId}/telegram/`, token),
+    [studentId, token],
+  );
 
   const loadAudit = useCallback(async () => {
     try {
@@ -34,7 +32,12 @@ export default function TelegramControl({ studentId, token }: { studentId: strin
     } catch (e) { setError(errorMessage(e)); }
   }, [studentId, token]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    let active = true;
+    load().then((result) => { if (active) setStatus(result); })
+      .catch((reason) => { if (active) setError(errorMessage(reason)); });
+    return () => { active = false; };
+  }, [load]);
 
   async function act(path: string, needReason: boolean) {
     if (needReason && !reason.trim()) { setError("دلیل را وارد کنید."); return; }
@@ -42,7 +45,7 @@ export default function TelegramControl({ studentId, token }: { studentId: strin
     try {
       await api(path, token, "POST", reason.trim() ? { reason: reason.trim() } : {});
       setReason("");
-      await load();
+      setStatus(await load());
       if (showAudit) await loadAudit();
     } catch (e) { setError(errorMessage(e)); }
     finally { setLoading(null); }

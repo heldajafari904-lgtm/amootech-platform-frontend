@@ -2,6 +2,8 @@ import type { Kind, Student } from "@/lib/planning";
 
 export type DailyReportItem = {
   id: number;
+  source: "WEB" | "TELEGRAM";
+  execution_source: "WEB" | "TELEGRAM" | null;
   plan_item: number | null;
   kind: Kind;
   title: string;
@@ -28,6 +30,7 @@ export type DailyReportItem = {
 };
 export type DailyReport = {
   id: number;
+  source: "WEB" | "TELEGRAM";
   student: number;
   date: string;
   wake_time: string | null;
