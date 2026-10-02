@@ -129,19 +129,22 @@
 .counselor-panel .ws-badge-past { background: #f1edf5; font-size: 11px; }
 .counselor-panel .ws-add { color: var(--brand-purple); border-color: #c8b2de; font-size: 13px; }
 .counselor-panel .ws-copy { width: 38px; height: 38px; }
-.counselor-panel .ws-boxes { gap: 12px; }
-.counselor-panel .ws-boxes > div:not(.ws-drop-end) { flex: 0 1 240px; min-width: 0; }
-.counselor-panel .ws-box { width: 100%; min-height: 112px; padding: 12px; gap: 6px; border-radius: 10px; cursor: auto; }
+.counselor-panel .ws-boxes { gap: 12px; align-items: start; }
+.counselor-panel .ws-boxes > div:not(.ws-drop-end) { flex: 0 1 240px; min-width: 0; align-self: start; }
+.counselor-panel .ws-box { width: 100%; min-height: 112px; height: auto; padding: 12px; gap: 6px; border-radius: 10px; cursor: auto; overflow: visible; display: flex; flex-direction: column; align-content: start; }
 .counselor-panel .ws-box[draggable="true"] { cursor: grab; }
 .counselor-panel .ws-box-study { background: #f5effc; border-color: #e2d3f1; }
 .counselor-panel .ws-box-test { background: #f8f3ff; border-color: #dac6ef; border-inline-start: 3px solid var(--brand-yellow); }
 .counselor-panel .ws-box-review { background: #fffae9; border-color: #eddfa9; }
 .counselor-panel .ws-box-exam { background: #fff5e5; border-color: #edd3a8; }
 .counselor-panel .ws-box-event { background: #f7f6f8; border-color: var(--panel-border); }
-.counselor-panel .ws-box-title { font-size: 14px; line-height: 1.6; }
-.counselor-panel :is(.ws-box-kind, .ws-box-time, .ws-box-meta, .ws-box-sub, .ws-lock) { font-size: 12px; }
-.counselor-panel .ws-box-head { padding-inline-end: 0; }
-.counselor-panel .ws-box-actions { position: static; opacity: 1; justify-content: flex-end; gap: 4px; padding-block-start: 4px; border-block-start: 1px solid #e3d9ec; }
+.counselor-panel .ws-box-title { font-size: 14px; line-height: 1.6; white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; word-break: break-word; }
+.counselor-panel :is(.ws-box-kind, .ws-box-time, .ws-box-meta, .ws-box-sub, .ws-lock) { font-size: 12px; overflow-wrap: anywhere; word-break: break-word; white-space: normal; }
+.counselor-panel .ws-box-sub { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.5; }
+.counselor-panel .ws-box-meta { white-space: normal; overflow: visible; }
+.counselor-panel .ws-lock { white-space: normal; overflow: visible; display: block; line-height: 1.6; }
+.counselor-panel .ws-box-head { padding-inline-end: 0; flex-wrap: wrap; gap: 6px; }
+.counselor-panel .ws-box-actions { position: static; opacity: 1; justify-content: flex-end; gap: 4px; padding-block-start: 4px; border-block-start: 1px solid #e3d9ec; flex-shrink: 0; margin-top: auto; flex-wrap: wrap; }
 .counselor-panel .ws-box-actions > button { opacity: 0; width: 30px; min-height: 30px; font-size: 14px; }
 .counselor-panel .ws-box:is(:hover, :focus-within) .ws-box-actions > button { opacity: 1; }
 .counselor-panel .ws-more { position: relative; }
@@ -149,6 +152,12 @@
 .counselor-panel .ws-more[open] { z-index: 6; }
 .counselor-panel .ws-more button { display: block; width: 100%; min-width: 140px; text-align: start; min-height: 36px; }
 .counselor-panel .ws-menu { position: absolute; inset-inline-end: 0; inset-block-start: 34px; padding: 4px; background: white; border: 1px solid var(--panel-border); border-radius: 8px; box-shadow: 0 4px 12px #16041e12; }
+/* Note/description - never hide, wrap fully; with expand/collapse for long text */
+.counselor-panel .ws-box-note-wrap { display: grid; gap: 4px; }
+.counselor-panel .ws-box-note { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; line-height: 1.7; font-size: 12px; color: #3a2a4a; background: rgba(255,255,255,.65); border: 1px solid #e8dff1; border-radius: 6px; padding: 6px 8px; overflow: visible; }
+.counselor-panel .ws-box-note.is-clamped { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; }
+.counselor-panel .ws-box-note-toggle { justify-self: start; min-height: 28px; padding: 2px 8px; font-size: 11px; color: var(--brand-purple); background: white; border: 1px solid #d9c6ec; border-radius: 6px; cursor: pointer; }
+.counselor-panel .ws-box-note-toggle:hover { background: var(--panel-tint); }
 .counselor-panel .ws-danger { color: #a12626; }
 .counselor-panel .ws-reorder { gap: 4px; }
 .counselor-panel .ws-reorder button { font-size: 12px; min-height: 28px; padding: 2px 8px; }

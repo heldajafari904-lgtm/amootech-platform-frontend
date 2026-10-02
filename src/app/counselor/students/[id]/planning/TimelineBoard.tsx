@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { DndContext, DragOverlay, PointerSensor, TouchSensor, KeyboardSensor, useSensor, useSensors, useDraggable, useDroppable, pointerWithin, rectIntersection, type DragEndEvent, type DragMoveEvent } from "@dnd-kit/core";
 import { persianDate, type PlanItem, type PlanDay, type Commitment } from "@/lib/planning";
 import { PanelIcon } from "@/components/counselor/PanelUI";
@@ -36,6 +36,41 @@ function TimelineDay({ date, day, clock, preview, props }: { date: string; day?:
   const { entries, scale, width } = useMemo(() => arrangeLanes(items), [items]);
   const { setNodeRef: setDayNode } = useDroppable({ id: `day:${date}`, data: { date, scheduled: true }, disabled: !!props.copyDate });
   useEffect(() => { if (viewport.current) viewport.current.scrollLeft = -Math.max(0, 360 * scale - 24); }, [scale]);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [trackHeight, setTrackHeight] = useState(44 + LANE_HEIGHT);
+  // Auto-height: track must enclose tallest box (note may expand)
+  useLayoutEffect(() => {
+    const track = trackRef.current;
+    if (!track) return;
+    const compute = () => {
+      const boxes = track.querySelectorAll<HTMLElement>(".timeline-activity .ws-box");
+      let max = 0;
+      boxes.forEach((el) => { max = Math.max(max, el.offsetHeight); });
+      // Empty state uses default lane height; otherwise tallest box + ruler(44) + padding(16)
+      const next = boxes.length ? max + 44 + 16 : 44 + LANE_HEIGHT;
+      setTrackHeight(next);
+    };
+    compute();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", compute);
+      return () => window.removeEventListener("resize", compute);
+    }
+    const ro = new ResizeObserver(compute);
+    // observe track and each box; also re-observe when entries change
+    ro.observe(track);
+    track.querySelectorAll(".timeline-activity .ws-box").forEach((el) => ro.observe(el));
+    // also watch for future note toggles via mutation
+    const mo = new MutationObserver(() => {
+      // re-attach observers for new boxes after expand
+      track.querySelectorAll<HTMLElement>(".timeline-activity .ws-box").forEach((el) => ro.observe(el));
+      compute();
+    });
+    mo.observe(track, { childList: true, subtree: true });
+    window.addEventListener("resize", compute);
+    // also compute after fonts load
+    if (document.fonts?.ready) document.fonts.ready.then(compute).catch(() => {});
+    return () => { ro.disconnect(); mo.disconnect(); window.removeEventListener("resize", compute); };
+  }, [entries]);
   const source = props.copyDate === date;
   const destination = !!props.copyDate && !source;
   const active = preview?.date === date;
@@ -46,7 +81,7 @@ function TimelineDay({ date, day, clock, preview, props }: { date: string; day?:
     <header className="ws-day-row-head"><div className="ws-day-row-title"><h3>{persianDate(date)}</h3>{date === clock.date && <span className="ws-badge-today">امروز</span>}{source && <span className="planning-status">مبدأ</span>}</div><div className="ws-day-row-summary"><span>{Math.floor(minutes/60).toLocaleString("fa-IR")}:{String(minutes%60).padStart(2,"0")} برنامه</span><span>{tests.toLocaleString("fa-IR")} تست</span><span>{items.length.toLocaleString("fa-IR")} فعالیت</span></div><div className="panel-row-actions"><button className="ws-copy" aria-label={`کپی ${persianDate(date)}`} disabled={!items.length || source || props.copyBusy} onClick={event => { event.stopPropagation(); if (day) props.onCopy(day); }}><PanelIcon name="copy"/></button><button className="ws-add" onClick={event => { event.stopPropagation(); props.onAdd(date); }}>＋ افزودن باکس</button></div></header>
     <div ref={viewport} className="timeline-viewport" aria-label={`خط زمانی ${persianDate(date)}`} tabIndex={0}>
       <div className="timeline-stage" style={{ width: width + MIN_CARD_WIDTH }}>
-        <div className="timeline-track" data-time-track={date} data-time-scale={scale} style={{ width, height: 44 + LANE_HEIGHT, backgroundImage: `repeating-linear-gradient(to left, transparent 0, transparent ${120 * scale - 1}px, #ece5f3 ${120 * scale - 1}px, #ece5f3 ${120 * scale}px)` }}>
+        <div ref={trackRef} className="timeline-track" data-time-track={date} data-time-scale={scale} style={{ width, height: trackHeight, minHeight: 44 + LANE_HEIGHT, backgroundImage: `repeating-linear-gradient(to left, transparent 0, transparent ${120 * scale - 1}px, #ece5f3 ${120 * scale - 1}px, #ece5f3 ${120 * scale}px)` }}>
           <div className="timeline-ruler" aria-label="ساعت‌های روز">{Array.from({length:(PLANNER_END-PLANNER_START)/120+1},(_,index) => PLANNER_START+index*120).map(value => <span key={value} style={{right:value * scale}}>{minutesToTime(value)}</span>)}</div>
           {now && <div className="timeline-now" style={{right:clock.minutes * scale}}><span>اکنون {clock.time}</span></div>}
           {active && preview.minutes !== null && <div className={`timeline-target ${preview.error ? "is-invalid" : ""}`} style={{right:preview.minutes * scale}}><span>{preview.error || `رها کردن در ${minutesToTime(preview.minutes)}`}</span></div>}

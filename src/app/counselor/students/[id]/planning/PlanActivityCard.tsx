@@ -1,9 +1,12 @@
 "use client";
+import { useState } from "react";
 import type { PlanItem } from "@/lib/planning";
 import { PanelIcon } from "@/components/counselor/PanelUI";
 
 function toFaDigits(s: string): string { return s.replace(/[0-9]/g, (d: string) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]); }
 function formatDuration(mins: number | null): string { if(!mins) return ""; const h=Math.floor(mins/60), m=mins%60; return m? `${toFaDigits(String(h))}:${toFaDigits(String(m).padStart(2,"0"))}` : `${toFaDigits(String(h))}:۰۰`; }
+
+const NOTE_COLLAPSE_CHARS = 120;
 
 export default function PlanActivityCard({
   item,
@@ -29,6 +32,9 @@ export default function PlanActivityCard({
   const kindClass = `ws-box ws-box-${item.kind.toLowerCase()}`;
   const title = item.title || item.subject_name || "—";
   const sub = (item.chapter_name || item.topic_name) ? [item.chapter_name, item.topic_name].filter(Boolean).join(" › ") : (item.subject_name && item.title ? item.subject_name : "");
+  const note = (item.note || "").trim();
+  const isLongNote = note.length > NOTE_COLLAPSE_CHARS;
+  const [expanded, setExpanded] = useState(false);
   return (
     <article className={kindClass} data-item-id={item.id} aria-busy={pending}>
       <button type="button" className="timeline-delete ws-danger" aria-label={`حذف ${title}`} disabled={pending || !item.counselor_editable} onClick={onDelete}><PanelIcon name="close"/></button>
@@ -40,6 +46,22 @@ export default function PlanActivityCard({
       <strong className="ws-box-title" title={title}>{title}</strong>
       {sub && <span className="ws-box-sub" title={sub}>{sub}</span>}
       <span className="ws-box-meta">{item.planned_duration_minutes ? formatDuration(item.planned_duration_minutes) : ""}{item.test_count ? ` · ${toFaDigits(String(item.test_count))} تست` : ""}</span>
+      {note && (
+        <div className="ws-box-note-wrap">
+          <p className={`ws-box-note ${!expanded && isLongNote ? "is-clamped" : ""}`} title={note}>{note}</p>
+          {isLongNote && (
+            <button
+              type="button"
+              className="ws-box-note-toggle"
+              aria-expanded={expanded}
+              onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              {expanded ? "نمایش کمتر" : "نمایش بیشتر"}
+            </button>
+          )}
+        </div>
+      )}
       <div className="ws-box-actions">
         <button type="button" aria-label="ویرایش" disabled={pending || !item.counselor_editable} onClick={onEdit}><PanelIcon name="edit"/></button>
         <button type="button" aria-label="کپی" disabled={pending || !item.counselor_editable} onClick={onDuplicate}><PanelIcon name="copy"/></button>
@@ -53,4 +75,3 @@ export default function PlanActivityCard({
     </article>
   );
 }
-
