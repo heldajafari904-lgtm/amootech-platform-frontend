@@ -1,0 +1,22 @@
+[
+  {
+    "name": "dashboard",
+    "violations": []
+  },
+  {
+    "name": "students",
+    "violations": []
+  },
+  {
+    "name": "student-detail",
+    "violations": []
+  },
+  {
+    "name": "planning",
+    "violations": []
+  },
+  {
+    "name": "wizard",
+    "violations": []
+  }
+]

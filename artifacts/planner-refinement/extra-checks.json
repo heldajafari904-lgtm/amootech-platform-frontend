@@ -1,0 +1,9 @@
+{
+  "checks": [
+    "three floating boxes on one row",
+    "source faded and six destinations selectable",
+    "2 + 3 = 5 append survives refresh",
+    "failed move rolls back with Persian error; API and refresh preserve original day/time",
+    "390px mobile controlled timeline scroll; no document overflow"
+  ]
+}

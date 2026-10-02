@@ -1,0 +1,146 @@
+{
+  "planId": 1060,
+  "planUrl": "http://localhost:3000/counselor/students/10/planning?plan=1060",
+  "checks": [
+    "Create arbitrary-start seven-day plan; persisted after reload",
+    "2h ruler 00–24; Tehran now only on today",
+    "Wizard error retains input; retry/double-click creates one real ID; reload persists",
+    "Edit title/note/duration; canonical data after reload",
+    "Duplicate creates distinct backend ID and survives reload",
+    "Real pointer drag same day, unscheduled→14:00; one atomic request; persisted",
+    "Real pointer cross-day 14:00→18:00–19:30 preserving 90m; persisted",
+    "Copy source faded .65; six full destinations; Escape cancel",
+    "Append via destination card body, canonical new IDs; existing activity preserved after reload",
+    "32px delete icon → confirmation → DELETE 204; reload preserves deletion",
+    "19 boxes all rendered; short neighboring boxes remain on one row",
+    "Real Excel/PDF export downloaded",
+    "Publish with seven populated days persists after reload"
+  ],
+  "errors": [],
+  "failures": [],
+  "requests": [
+    {
+      "url": "http://localhost:8000/api/v1/planning/plans/",
+      "method": "POST",
+      "data": {
+        "student": 10,
+        "start_date": "2026-09-30",
+        "end_date": "2026-10-06",
+        "title": "تست hotfix زمان‌بندی · قابل حذف"
+      }
+    },
+    {
+      "url": "http://localhost:8000/api/v1/planning/days/",
+      "method": "POST",
+      "data": {
+        "plan": 1060,
+        "date": "2026-09-30"
+      }
+    },
+    {
+      "url": "http://localhost:8000/api/v1/planning/items/",
+      "method": "POST",
+      "data": {
+        "plan_day": 6348,
+        "kind": "EVENT",
+        "ordering": 0,
+        "title": "فعالیت تست A",
+        "planned_duration_minutes": 90,
+        "start_time": null,
+        "end_time": null,
+        "note": "یادداشت حفظ‌شده",
+        "subject": null,
+        "chapter": null,
+        "topic": null,
+        "test_count": null
+      }
+    },
+    {
+      "url": "http://localhost:8000/api/v1/planning/items/",
+      "method": "POST",
+      "data": {
+        "plan_day": 6348,
+        "kind": "EVENT",
+        "ordering": 0,
+        "title": "فعالیت تست A",
+        "planned_duration_minutes": 90,
+        "start_time": null,
+        "end_time": null,
+        "note": "یادداشت حفظ‌شده",
+        "subject": null,
+        "chapter": null,
+        "topic": null,
+        "test_count": null
+      }
+    },
+    {
+      "url": "http://localhost:8000/api/v1/planning/items/32829/",
+      "method": "PATCH",
+      "data": {
+        "plan_day": 6348,
+        "kind": "EVENT",
+        "ordering": 0,
+        "title": "فعالیت تست A ویرایش",
+        "planned_duration_minutes": 90,
+        "start_time": null,
+        "end_time": null,
+        "note": "توضیحات ویرایش",
+        "subject": null,
+        "chapter": null,
+        "topic": null,
+        "test_count": null
+      }
+    },
+    {
+      "url": "http://localhost:8000/api/v1/planning/items/32829/duplicate/",
+      "method": "POST",
+      "data": {}
+    },
+    {
+      "url": "http://localhost:8000/api/v1/planning/items/32829/move/",
+      "method": "POST",
+      "data": {
+        "target_day": 6348,
+        "start_time": "14:00",
+        "end_time": "15:30",
+        "planned_duration_minutes": 90
+      }
+    },
+    {
+      "url": "http://localhost:8000/api/v1/planning/days/",
+      "method": "POST",
+      "data": {
+        "plan": 1060,
+        "date": "2026-10-01"
+      }
+    },
+    {
+      "url": "http://localhost:8000/api/v1/planning/items/32829/move/",
+      "method": "POST",
+      "data": {
+        "target_day": 6349,
+        "start_time": "18:00",
+        "end_time": "19:30",
+        "planned_duration_minutes": 90
+      }
+    },
+    {
+      "url": "http://localhost:8000/api/v1/planning/days/6348/copy-day/",
+      "method": "POST",
+      "data": {
+        "target_day": 6349,
+        "mode": "append"
+      }
+    },
+    {
+      "url": "http://localhost:8000/api/v1/planning/items/32830/",
+      "method": "DELETE",
+      "data": null
+    },
+    {
+      "url": "http://localhost:8000/api/v1/planning/plans/1060/publish/",
+      "method": "POST",
+      "data": {}
+    }
+  ]
+}

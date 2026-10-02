@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage } from "@/lib/api";
+import { formatJalaliDateTime } from "@/lib/planning";
 
 type TelegramStatus = {
   connection: { group_connected: boolean; student_connected: boolean; chat_title: string | null; telegram_username: string | null };
@@ -66,8 +67,8 @@ export default function TelegramControl({ studentId, token }: { studentId: strin
         <div>تعلیق: {access.suspended ? "بله" : "خیر"}</div>
         <div>بن: {access.banned ? "بله" : "خیر"}</div>
         <div>گروه: {group.locked ? "Locked" : "Unlocked"}</div>
-        <div>آخرین فعالیت: {bot.last_activity_at ? new Date(bot.last_activity_at).toLocaleString("fa-IR") : "—"}</div>
-        <div>آخرین خطا: {bot.last_error_message || "—"}{bot.last_error_at ? ` (${new Date(bot.last_error_at).toLocaleString("fa-IR")})` : ""}</div>
+        <div>آخرین فعالیت: {bot.last_activity_at ? formatJalaliDateTime(bot.last_activity_at) : "—"}</div>
+        <div>آخرین خطا: {bot.last_error_message || "—"}{bot.last_error_at ? ` (${formatJalaliDateTime(bot.last_error_at)})` : ""}</div>
         <div>ربات: {bot.reachable ? "Online" : "Unavailable"}</div>
       </div>
 
@@ -98,7 +99,7 @@ export default function TelegramControl({ studentId, token }: { studentId: strin
             <thead><tr><th>زمان</th><th>Admin</th><th>Action</th><th>Result</th><th>Reason</th></tr></thead>
             <tbody>
               {audit.map((row) => (
-                <tr key={row.id}><td>{new Date(row.created_at).toLocaleString("fa-IR")}</td><td>{row.actor || "—"}</td><td>{row.action}</td><td>{row.success ? "✅" : "❌"}</td><td>{row.reason || "—"}</td></tr>
+                <tr key={row.id}><td>{formatJalaliDateTime(row.created_at)}</td><td>{row.actor || "—"}</td><td>{row.action}</td><td>{row.success ? "✅" : "❌"}</td><td>{row.reason || "—"}</td></tr>
               ))}
               {audit.length === 0 && <tr><td colSpan={5}>موردی یافت نشد.</td></tr>}
             </tbody>

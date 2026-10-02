@@ -1,0 +1,6 @@
+{
+  "checks": [
+    "REVIEW with subject, chapter, topic auto-advance and persistence",
+    "EXAM with subject, chapter, topic auto-advance and persistence"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "planUrl": "http://localhost:3000/counselor/students/10/planning?plan=1052",
+  "checks": [
+    "create arbitrary-start seven-day draft",
+    "wizard auto-advance, optional skip, duration, create",
+    "edit duration and add description",
+    "duplicate",
+    "one-click append copy to empty day",
+    "append to occupied day",
+    "replace with confirmation",
+    "drag reorder, one request",
+    "cross-day drag persistence after reload",
+    "delete",
+    "all seven day chips active; Jalali range shown",
+    "Excel export",
+    "PDF export",
+    "publish",
+    "published status persists"
+  ],
+  "errors": []
+}

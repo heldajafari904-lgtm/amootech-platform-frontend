@@ -1,0 +1,19 @@
+{
+  "checks": [
+    "dialog initial focus, trap, Escape and focus restoration",
+    "TEST wizard with positive test count",
+    "EVENT title respects existing required-title rule",
+    "cross-day move collision rejected and optimistic state restored",
+    "fixed commitment: no active fixture for student 10",
+    "past-day Add stays enabled; recorded execution disables dragging and displays lock reason"
+  ],
+  "removedIncompleteQAPlans": [
+    1050,
+    1049,
+    1048,
+    1047,
+    1046,
+    1045,
+    1044
+  ]
+}

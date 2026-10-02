@@ -1,0 +1,42 @@
+{
+  "plannerUrl": "http://localhost:3000/counselor/students/1/planning?plan=788",
+  "studentUrl": "http://localhost:3000/counselor/students/1",
+  "checks": [
+    {
+      "width": 1920,
+      "overflow": false,
+      "rows": 7,
+      "font": "\"Vazirmatn Panel\", Vazirmatn, Tahoma, Arial, sans-serif"
+    },
+    {
+      "width": 1440,
+      "overflow": false,
+      "rows": 7,
+      "font": "\"Vazirmatn Panel\", Vazirmatn, Tahoma, Arial, sans-serif"
+    },
+    {
+      "width": 1024,
+      "overflow": false,
+      "rows": 7,
+      "font": "\"Vazirmatn Panel\", Vazirmatn, Tahoma, Arial, sans-serif"
+    },
+    {
+      "width": 768,
+      "overflow": false,
+      "rows": 7,
+      "font": "\"Vazirmatn Panel\", Vazirmatn, Tahoma, Arial, sans-serif"
+    },
+    {
+      "width": 390,
+      "overflow": false,
+      "rows": 7,
+      "font": "\"Vazirmatn Panel\", Vazirmatn, Tahoma, Arial, sans-serif"
+    },
+    {
+      "page": "students-mobile",
+      "width": 390,
+      "overflow": false
+    }
+  ],
+  "errors": []
+}

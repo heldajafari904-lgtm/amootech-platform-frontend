@@ -1,0 +1,7 @@
+{
+  "checks": [
+    "fixed commitment move conflict rejected by existing API",
+    "student ownership access remains enforced"
+  ],
+  "temporaryCommitmentRemoved": true
+}

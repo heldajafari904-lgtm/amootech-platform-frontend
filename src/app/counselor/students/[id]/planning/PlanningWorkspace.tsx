@@ -1,18 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { StudentPlanningHeader, TopChart } from "./PlanningOverview";
+import WizardAddBox from "./WizardAddBox";
+import TimelineBoard from "./TimelineBoard";
+import { planningApi, type ItemInput } from "./planningApi";
+import { clampTime, itemDuration, minutesToTime, timeToMinutes } from "./plannerTime";
+import { apiErrorMessage } from "./planningFeedback";
+import { PanelIcon, useDialogFocus } from "@/components/counselor/PanelUI";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, allPages } from "@/lib/api";
 import {
   addDaysISO,
   Commitment,
-  downloadPlanExport,
   formatJalaliShort,
   persianDate,
   Plan,
   PlanDay,
   PlanItem,
-  planningError,
   planTitleSuggestion,
   sevenDayRange,
   Student,
@@ -27,165 +32,6 @@ function notify(setNotice: (s: string) => void, msg: string) {
   setNotice(msg);
   window.setTimeout(() => setNotice(""), 2500);
 }
-function apiErrorMessage(reason: unknown): string {
-  const msg = planningError(reason);
-  if (msg.includes("permission") || msg.includes("اجازه")) return "اجازه ویرایش این برنامه را ندارید.";
-  if (msg.includes("past") || msg.includes("گذشته")) return "این فعالیت خارج از بازه برنامه است.";
-  if (msg.includes("Date must be within")) return "این فعالیت خارج از بازه برنامه است.";
-  return msg;
-}
-
-// ---- Student Header ----
-function toFa(s: string): string { return s.replace(/[0-9]/g, (d: string) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]); }
-
-function StudentPlanningHeader({
-  student,
-  plan,
-  counselorName,
-  metrics,
-}: {
-  student: Student;
-  plan: Plan | null;
-  counselorName: string;
-  metrics: { plannedMinutes: number; actualMinutes: number; plannedTests: number; actualTests: number; completion: number | null } | null;
-}) {
-  const stats = plan ? (()=>{ const items=(plan.days||[]).flatMap(d=>d.items); const mins=items.reduce((a,i)=>a+(i.planned_duration_minutes||0),0); const tests=items.reduce((a,i)=>a+(i.test_count||0),0); const h=Math.floor(mins/60), m=mins%60; return {mins,h,m,tests,count:items.length}; })() : null;
-  // perDay handled by TopChart
-  const am = metrics?.actualMinutes;
-  const at = metrics?.actualTests;
-  const comp = metrics?.completion;
-  const plannedLabel = stats ? `${toFa(String(stats.h))}:${toFa(String(stats.m).padStart(2,"0"))}` : "—";
-  const actualLabel = am!=null && am>0 ? `${toFa(String(Math.floor(am/60)))}:${toFa(String(am%60).padStart(2,"0"))}` : null;
-  return (
-    <div className="ws-top-right">
-      <div className="ws-hero-top">
-        <div className="ws-hero-student">
-          <div className="ws-hero-avatar">{(student.user.first_name?.[0] || student.user.username[0] || "?").toUpperCase()}</div>
-          <div>
-            <div className="ws-hero-name">{student.user.first_name} {student.user.last_name}</div>
-            <div className="ws-hero-meta">{student.grade_name || "پایه نامشخص"} · {student.field_name || "رشته نامشخص"} · مشاور: {counselorName}</div>
-          </div>
-        </div>
-        {plan && <span className="ws-hero-week">{plan.title || `${persianDate(plan.start_date)} تا ${persianDate(plan.end_date)}`}</span>}
-      </div>
-      <div className="ws-hero-stats" aria-label="شاخص‌های برنامه">
-        <span>برنامه <strong>{plannedLabel}</strong></span>
-        {actualLabel ? <span>اجرا <strong>{actualLabel}</strong></span> : stats ? <span>برنامه <strong>{plannedLabel}</strong></span> : null}
-        <span>تست <strong>{stats ? toFa(String(stats.tests)) : "—"}</strong>{at!=null && at!==stats?.tests ? ` / واقعی ${toFa(String(at))}` : ""}</span>
-        {comp!=null ? <span>تکمیل <strong>{toFa(String(comp))}٪</strong></span> : null}
-        {stats && <span className={`ws-status ${plan!.status === "PUBLISHED" ? "is-published" : ""}`}>{plan!.status === "DRAFT" ? "پیش‌نویس" : "منتشرشده"}</span>}
-      </div>
-    </div>
-  );
-}
-
-function TopChart({ plan }: { plan: Plan | null }) {
-  const perDay = plan ? (plan.days||[]).slice().sort((a,b)=>a.date.localeCompare(b.date)).map(d=> ({date:d.date, mins: d.items.reduce((a,i)=>a+(i.planned_duration_minutes||0),0), tests: d.items.reduce((a,i)=>a+(i.test_count||0),0)})) : [];
-  const [tab,setTab] = useState<"study"|"test">("study");
-  if (!plan || perDay.length===0) return null;
-  const maxMins = Math.max(1, ...perDay.map(d=>d.mins));
-  const maxTests = Math.max(1, ...perDay.map(d=>d.tests));
-  return (
-    <div className="ws-top-left">
-      <div className="ws-top-chart" aria-label="نمودار هفتگی">
-        <div className="ws-top-chart-head">
-          <span className="ws-top-chart-title">روند هفته</span>
-          <div className="ws-top-chart-tabs" role="tablist">
-            <button type="button" role="tab" aria-selected={tab==="study"} className={tab==="study"?"is-active":""} onClick={()=>setTab("study")}>مطالعه</button>
-            <button type="button" role="tab" aria-selected={tab==="test"} className={tab==="test"?"is-active":""} onClick={()=>setTab("test")}>تست</button>
-          </div>
-        </div>
-        <div className="ws-mini-chart">
-          {perDay.map(d=> {
-            const val = tab==="study" ? d.mins : d.tests;
-            const max = tab==="study" ? maxMins : maxTests;
-            return (
-              <div key={d.date} className="ws-mini-bar">
-                <div className="ws-mini-bar-track">
-                  <span style={{height: `${Math.max(4, (val/max)*100)}%`, background: tab==="study"?"#0e6477":"#2a9d8f"}} />
-                </div>
-                <span className="ws-mini-bar-value">{tab==="study" ? toFa(String(Math.round(val/6)/10)) : toFa(String(val))}</span>
-                <span className="ws-mini-bar-label">{formatJalaliShort(d.date).split(" ")[0].slice(0,3)}</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ---- Metrics Bar (kept for compatibility, not rendered) ----
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function MetricsBar({ plan, token }: { plan: Plan | null; token: string }) {
-  const [data, setData] = useState<null | {
-    plannedMinutes: number;
-    actualMinutes: number;
-    plannedTests: number;
-    actualTests: number;
-    completion: number | null;
-    activeDays: number;
-  }>(null);
-  const [loading, setLoading] = useState(false);
-  useEffect(() => {
-    if (!plan?.id) {
-      queueMicrotask(() => setData(null));
-      return;
-    }
-    // compute from plan items + try counselor progress if available
-    const plannedMinutes = (plan.days || []).flatMap((d) => d.items).reduce((s, i) => s + (i.planned_duration_minutes || 0), 0);
-    const plannedTests = (plan.days || []).flatMap((d) => d.items).reduce((s, i) => s + (i.test_count || 0), 0);
-    const activeDays = (plan.days || []).filter((d) => d.items.length > 0).length;
-    // try fetch progress for actual/published metrics
-    let live = true;
-    queueMicrotask(() => setLoading(true));
-    // metrics for progress are only for published scope; we attempt fetch but fallback to local
-    api<unknown>(`/counselor/students/${plan.student}/progress/?start_date=${plan.start_date}&end_date=${plan.end_date}`, token)
-      .then((res: unknown) => {
-        if (!live) return;
-        const r = res as { today?: unknown; recent_days?: { actual_minutes: number; actual_tests: number }[]; planned_items?: { actual_minutes: number | null; actual_tests: number | null; status: string }[] };
-        if (r && Array.isArray(r.planned_items)) {
-          const actualMinutes = r.planned_items.reduce((s: number, it: { actual_minutes: number | null }) => s + (it.actual_minutes || 0), 0);
-          const actualTests = r.planned_items.reduce((s: number, it: { actual_tests: number | null }) => s + (it.actual_tests || 0), 0);
-          const completed = r.planned_items.filter((it: { status: string }) => it.status === "COMPLETED").length;
-          const total = r.planned_items.length;
-          setData({
-            plannedMinutes,
-            plannedTests,
-            actualMinutes,
-            actualTests,
-            completion: total ? Math.round((completed * 100) / total) : null,
-            activeDays,
-          });
-        } else {
-          setData({ plannedMinutes, plannedTests, actualMinutes: 0, actualTests: 0, completion: null, activeDays });
-        }
-      })
-      .catch(() => {
-        if (live) setData({ plannedMinutes, plannedTests, actualMinutes: 0, actualTests: 0, completion: null, activeDays });
-      })
-      .finally(() => {
-        if (live) setLoading(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [plan, token]);
-
-  if (!plan) return null;
-  if (loading && !data) return <div className="ws-metrics ws-skeleton"><span/><span/><span/><span/><span/></div>;
-  if (!data) return null;
-  return (
-    <section className="ws-metrics" aria-label="شاخص‌های برنامه">
-      <div><small>دقایق برنامه</small><strong>{data.plannedMinutes}′</strong></div>
-      <div><small>دقایق انجام‌شده</small><strong>{data.actualMinutes}′</strong></div>
-      <div><small>درصد تکمیل</small><strong>{data.completion === null ? "—" : `${data.completion}%`}</strong></div>
-      <div><small>تست برنامه</small><strong>{data.plannedTests}</strong></div>
-      <div><small>روزهای فعال</small><strong>{data.activeDays}</strong></div>
-    </section>
-  );
-}
-
 // ---- QuickAdd ----
 type QuickAddProps = {
   token: string;
@@ -193,154 +39,12 @@ type QuickAddProps = {
   dayId: number;
   ordering: number;
   tree: AcademicTree;
-  onCreated: () => void;
+  onCreated: (item: PlanItem) => Promise<void>;
   onError: (m: string) => void;
   initialItem?: PlanItem;
   onCancel?: () => void;
   mode?: "create" | "edit";
 };
-
-function WizardAddBox({ token, dayId, ordering, tree, onCreated, onError, onCancel }: { token: string; dayId: number; ordering: number; tree: AcademicTree; onCreated: () => void; onError:(m:string)=>void; onCancel:()=>void }) {
-  const [step, setStep] = useState(0);
-  const [kind, setKind] = useState<PlanItem["kind"] | null>(null);
-  const [subject, setSubject] = useState<string>("");
-  const [chapter, setChapter] = useState<string>("");
-  const [topic, setTopic] = useState<string>("");
-  const [duration, setDuration] = useState<string>("60");
-  const [testCount, setTestCount] = useState<string>("");
-  const [note, setNote] = useState<string>("");
-  const [busy, setBusy] = useState(false);
-  const chapters = subject ? tree.chapters.filter(c=> String(c.subject)===subject) : [];
-  const topics = chapter ? tree.topics.filter(t=> String(t.chapter)===chapter) : [];
-  // Dynamic steps: kind -> subject (if academic) -> chapter/topic -> duration -> testCount (if TEST) -> confirm
-  // Build step list
-  const steps: {key:string; optional?:boolean}[] = [];
-  steps.push({key:"kind"});
-  if (kind && kind!=="EVENT") steps.push({key:"subject"});
-  if (kind && kind!=="EVENT" && subject && chapters.length>0) steps.push({key:"chapter", optional: true});
-  if (kind && kind!=="EVENT" && chapter && topics.length>0) steps.push({key:"topic", optional: true});
-  steps.push({key:"duration"});
-  if (kind==="TEST") steps.push({key:"testCount"});
-  steps.push({key:"confirm"});
-  const cur = steps[step]?.key;
-  const total = steps.length;
-  const progress = ((step+1)/total)*100;
-
-  function next(){ if(step < total-1) setStep(s=>s+1); }
-  function prev(){ if(step>0) setStep(s=>s-1); }
-
-  async function create(){
-    if(busy) return;
-    setBusy(true);
-    const payload: Record<string, unknown> = {
-      plan_day: dayId, kind: kind!, ordering, title: "", planned_duration_minutes: duration ? Number(duration):null, start_time: null, end_time: null, note: note || "",
-      subject: subject ? Number(subject):null, chapter: chapter ? Number(chapter):null, topic: topic ? Number(topic):null,
-      test_count: kind==="TEST" ? (testCount ? Number(testCount):null) : null,
-    };
-    try { await api("/planning/items/", token, "POST", payload); onCreated(); } catch(reason){ onError(apiErrorMessage(reason)); } finally { setBusy(false); }
-  }
-
-  // Keyboard support
-  function handleKey(e: React.KeyboardEvent){ if(e.key==="Escape") onCancel(); }
-
-  return (
-    <div className="ws-wizard" role="dialog" aria-modal="true" onKeyDown={handleKey} onClick={onCancel}>
-      <div className="ws-wizard-card" onClick={e=>e.stopPropagation()}>
-        <div className="ws-wizard-head">
-          <span className="ws-wizard-step">مرحله {step+1} از {total}</span>
-          <button type="button" className="ws-subtle" onClick={onCancel}>✕</button>
-        </div>
-        <div className="ws-wizard-progress"><span style={{width: `${progress}%`}} /></div>
-
-        {cur==="kind" && (
-          <div className="ws-wizard-options" aria-label="نوع باکس">
-            <p className="ws-wizard-title">نوع باکس را انتخاب کن</p>
-            {(["STUDY","TEST","REVIEW","EXAM","EVENT"] as const).map(k=> (
-              <button key={k} type="button" className={`ws-wizard-option ${kind===k?"is-selected":""}`} onClick={()=>{ setKind(k); setTimeout(next,120); }}>{k==="STUDY"?"مطالعه":k==="TEST"?"تست":k==="REVIEW"?"مرور":k==="EXAM"?"آزمون":"سایر"}</button>
-            ))}
-          </div>
-        )}
-
-        {cur==="subject" && (
-          <div className="ws-wizard-options">
-            <p className="ws-wizard-title">درس را انتخاب کن</p>
-            {tree.subjects.length===0 ? <p className="ws-empty-text">درسی یافت نشد</p> : tree.subjects.map(s=> (
-              <button key={s.id} type="button" className={`ws-wizard-option ${subject===String(s.id)?"is-selected":""}`} onClick={()=>{ setSubject(String(s.id)); setChapter(""); setTopic(""); setTimeout(next,120); }}>{s.name}</button>
-            ))}
-            <button type="button" className="ws-wizard-skip" onClick={next}>رد شدن</button>
-          </div>
-        )}
-
-        {cur==="chapter" && (
-          <div className="ws-wizard-options">
-            <p className="ws-wizard-title">فصل / مبحث</p>
-            {chapters.map(c=> (
-              <button key={c.id} type="button" className={`ws-wizard-option ${chapter===String(c.id)?"is-selected":""}`} onClick={()=>{ setChapter(String(c.id)); setTopic(""); setTimeout(next,120); }}>{c.name}</button>
-            ))}
-            <button type="button" className="ws-wizard-skip" onClick={()=>{ setChapter(""); next(); }}>رد شدن</button>
-          </div>
-        )}
-
-        {cur==="topic" && (
-          <div className="ws-wizard-options">
-            <p className="ws-wizard-title">ریز مبحث</p>
-            {topics.map(topicItem=> (
-              <button key={topicItem.id} type="button" className={`ws-wizard-option ${topic===String(topicItem.id)?"is-selected":""}`} onClick={()=>{ setTopic(String(topicItem.id)); setTimeout(next,120); }}>{topicItem.name}</button>
-            ))}
-            <button type="button" className="ws-wizard-skip" onClick={()=>{ setTopic(""); next(); }}>رد شدن</button>
-          </div>
-        )}
-
-        {cur==="duration" && (
-          <div className="ws-wizard-options">
-            <p className="ws-wizard-title">مدت زمان</p>
-            <div style={{display:"flex",flexWrap:"wrap",gap:".4rem"}}>
-              {["30","45","60","90","120"].map(v=> (
-                <button key={v} type="button" className={`ws-wizard-option ${duration===v?"is-selected":""}`} style={{flex:"1 1 4rem"}} onClick={()=>{ setDuration(v); setTimeout(next,120); }}>{v} دقیقه</button>
-              ))}
-            </div>
-            <label style={{display:"grid",gap:".25rem",fontSize:".78rem"}}>دلخواه<input type="number" min={5} value={duration} onChange={e=>setDuration(e.target.value)} /></label>
-            <button type="button" className="ws-link" onClick={next}>ادامه</button>
-          </div>
-        )}
-
-        {cur==="testCount" && (
-          <div className="ws-wizard-options">
-            <p className="ws-wizard-title">تعداد تست</p>
-            {["5","10","20","30","50"].map(v=> (
-              <button key={v} type="button" className={`ws-wizard-option ${testCount===v?"is-selected":""}`} onClick={()=>{ setTestCount(v); setTimeout(next,120); }}>{v} تست</button>
-            ))}
-            <label style={{display:"grid",gap:".25rem"}}>دلخواه<input type="number" min={1} value={testCount} onChange={e=>setTestCount(e.target.value)} /></label>
-            <button type="button" className="ws-wizard-skip" onClick={()=>{ setTestCount(""); next(); }}>رد شدن</button>
-          </div>
-        )}
-
-        {cur==="confirm" && (
-          <div className="ws-wizard-options">
-            <p className="ws-wizard-title">بازبینی کوتاه</p>
-            <div className="ws-wizard-preview">
-              <span>{kind==="STUDY"?"مطالعه":kind==="TEST"?"تست":kind==="REVIEW"?"مرور":kind==="EXAM"?"آزمون":"رویداد"} {subject ? `— ${tree.subjects.find(s=>String(s.id)===subject)?.name || ""}` : ""}</span>
-              {chapter && <span>فصل: {chapters.find(c=>String(c.id)===chapter)?.name}</span>}
-              <span>{duration} دقیقه {testCount ? `· ${testCount} تست` : ""}</span>
-            </div>
-            <label style={{display:"grid",gap:".2rem",fontSize:".78rem"}}>توضیحات (اختیاری، بعداً هم قابل افزودن است)<textarea rows={2} value={note} onChange={e=>setNote(e.target.value)} placeholder="مثلاً صفحات یا نکته" /></label>
-            <div className="ws-wizard-actions">
-              <button type="button" disabled={busy || !kind} onClick={create} className="ws-primary">{busy ? "در حال ثبت…" : "ثبت باکس"}</button>
-              <button type="button" className="ws-wizard-skip" onClick={prev}>بازگشت</button>
-            </div>
-          </div>
-        )}
-
-        {cur!=="kind" && cur!=="confirm" && (
-          <div className="ws-wizard-actions">
-            <button type="button" className="ws-wizard-skip" onClick={prev}>بازگشت</button>
-            {steps[step]?.optional && <button type="button" className="ws-wizard-skip" onClick={next}>رد شدن</button>}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 function QuickAdd({ token, dayId, ordering, tree, onCreated, onError, initialItem, onCancel, mode = "create" }: QuickAddProps) {
   const [kind, setKind] = useState<PlanItem["kind"]>((initialItem?.kind as PlanItem["kind"]) || "STUDY");
@@ -355,15 +59,17 @@ function QuickAdd({ token, dayId, ordering, tree, onCreated, onError, initialIte
   const [note, setNote] = useState(initialItem?.note || "");
   const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [localError, setLocalError] = useState("");
+  const submitting = useRef(false);
 
   const chapters = useMemo(() => (subject ? tree.chapters.filter((c) => String(c.subject) === subject) : []), [subject, tree]);
   const topics = useMemo(() => (chapter ? tree.topics.filter((t) => String(t.chapter) === chapter) : []), [chapter, tree]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (busy) return;
-    setBusy(true);
-    const payload: Record<string, unknown> = {
+    if (submitting.current) return;
+    submitting.current = true; setBusy(true); setLocalError("");
+    const payload: ItemInput = {
       plan_day: dayId,
       kind,
       ordering: initialItem?.ordering ?? ordering,
@@ -378,21 +84,16 @@ function QuickAdd({ token, dayId, ordering, tree, onCreated, onError, initialIte
       test_count: kind === "TEST" ? (testCount ? Number(testCount) : null) : null,
     };
     try {
-      if (mode === "edit" && initialItem) {
-        await api(`/planning/items/${initialItem.id}/`, token, "PATCH", payload);
-      } else {
-        await api("/planning/items/", token, "POST", payload);
-      }
-      onCreated();
-    } catch (reason) {
-      onError(apiErrorMessage(reason));
-    } finally {
-      setBusy(false);
-    }
+      const client = planningApi(token);
+      const item = mode === "edit" && initialItem ? await client.updateItem(initialItem.id, payload) : await client.createItem(payload);
+      await onCreated(item);
+    } catch (reason) { const message = apiErrorMessage(reason); setLocalError(message); onError(message); }
+    finally { submitting.current = false; setBusy(false); }
   }
 
   return (
     <form className="ws-quickadd" onSubmit={submit} aria-label={mode === "edit" ? "ویرایش فعالیت" : "افزودن سریع"}>
+      {localError && <p className="ws-error" role="alert">{localError}</p>}
       <div className="ws-quickadd-row">
         <label>
           نوع
@@ -473,53 +174,6 @@ function QuickAdd({ token, dayId, ordering, tree, onCreated, onError, initialIte
   );
 }
 
-// ---- Card ----
-function toFaDigits(s: string): string { return s.replace(/[0-9]/g, (d: string) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]); }
-function formatDuration(mins: number | null): string { if(!mins) return ""; const h=Math.floor(mins/60), m=mins%60; return m? `${toFaDigits(String(h))}:${toFaDigits(String(m).padStart(2,"0"))}` : `${toFaDigits(String(h))}:۰۰`; }
-
-function PlanActivityCard({
-  item,
-  onEdit,
-  onDuplicate,
-  onMove,
-  onDelete,
-  onAddNote,
-  draggableProps,
-}: {
-  item: PlanItem;
-  onEdit: () => void;
-  onDuplicate: () => void;
-  onMove: () => void;
-  onDelete: () => void;
-  onAddNote: () => void;
-  draggableProps?: React.HTMLAttributes<HTMLDivElement>;
-}) {
-  const kindClass = `ws-box ws-box-${item.kind.toLowerCase()}`;
-  const title = item.title || item.subject_name || "—";
-  const sub = (item.chapter_name || item.topic_name) ? [item.chapter_name, item.topic_name].filter(Boolean).join(" › ") : (item.subject_name && item.title ? item.subject_name : "");
-  return (
-    <article className={kindClass} draggable {...draggableProps} data-item-id={item.id}>
-      <div className="ws-box-head">
-        <span className="ws-box-kind">{item.kind === "STUDY" ? "مطالعه" : item.kind === "TEST" ? "تست" : item.kind === "REVIEW" ? "مرور" : item.kind === "EXAM" ? "آزمون" : "رویداد"}</span>
-        {item.start_time && item.end_time && <span className="ws-box-time">{toFaDigits(item.start_time.slice(0,5))}–{toFaDigits(item.end_time.slice(0,5))}</span>}
-      </div>
-      <strong className="ws-box-title" title={title}>{title}</strong>
-      {sub && <span className="ws-box-sub" title={sub}>{sub}</span>}
-      <span className="ws-box-meta">{item.planned_duration_minutes ? formatDuration(item.planned_duration_minutes) : ""}{item.test_count ? ` · ${toFaDigits(String(item.test_count))} تست` : ""}</span>
-      <div className="ws-box-actions">
-        <button type="button" aria-label="ویرایش" onClick={onEdit}>✎</button>
-        <button type="button" aria-label="کپی" onClick={onDuplicate}>⧉</button>
-        <button type="button" aria-label="افزودن توضیحات" onClick={onAddNote}>＋</button>
-        <details className="ws-more">
-          <summary aria-label="بیشتر">⋯</summary>
-          <button type="button" onClick={onMove}>جابه‌جایی</button>
-          <button type="button" onClick={onDelete}>حذف</button>
-        </details>
-      </div>
-      {!item.counselor_editable && item.edit_lock_reason && <small className="ws-lock">{item.edit_lock_reason}</small>}
-    </article>
-  );
-}
 
 // ---- Main Workspace ----
 export default function PlanningWorkspace({ studentId }: { studentId: string }) {
@@ -527,7 +181,19 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
   const [student, setStudent] = useState<Student | null>(null);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [planId, setPlanId] = useState<number | null>(null);
-  const [plan, setPlan] = useState<Plan | null>(null);
+  const [plan, setPlanState] = useState<Plan | null>(null);
+  const planRef = useRef<Plan | null>(null);
+  const setPlan = useCallback((value: React.SetStateAction<Plan | null>) => {
+    const next = typeof value === "function" ? value(planRef.current) : value;
+    planRef.current = next; setPlanState(next);
+  }, []);
+  const client = useMemo(() => planningApi(token), [token]);
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const locks = useRef(new Set<string>());
+  const [actionKeys, setActionKeys] = useState(new Set<string>());
+  const [deleteTarget, setDeleteTarget] = useState<PlanItem | null>(null);
+  const [moveTime, setMoveTime] = useState("");
+  const [moveUnscheduled, setMoveUnscheduled] = useState(false);
   const [weekStart, setWeekStart] = useState(tehranTodayISO);
   const [title, setTitle] = useState("");
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
@@ -540,17 +206,17 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [pendingWrites, setPendingWrites] = useState(0);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const [hasSaved, setHasSaved] = useState(false);
+
   const today = tehranTodayISO();
-  const [mode, setMode] = useState<"day"|"week">("day"); // eslint-disable-line @typescript-eslint/no-unused-vars
-  const [activeDay, setActiveDay] = useState<string | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [showBacklog, setShowBacklog] = useState(true);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [showContext, setShowContext] = useState(true);
-  const [commitments, setCommitments] = useState<Commitment[]>([]); // eslint-disable-line @typescript-eslint/no-unused-vars
+  const [commitments, setCommitments] = useState<Commitment[]>([]);
   const [copySource, setCopySource] = useState<PlanDay | null>(null);
   const [copyConfirm, setCopyConfirm] = useState<{target: PlanDay, mode: "append"|"replace"} | null>(null);
   const [copyBusy, setCopyBusy] = useState(false);
+  const copying = useRef(false);
+  const [chooseCopyMethod, setChooseCopyMethod] = useState(false);
 
   // URL state
   useEffect(() => {
@@ -564,7 +230,7 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
   }, []);
   useEffect(() => {
     const url = new URL(window.location.href);
-    if (planId) url.searchParams.set("plan", String(planId));
+    if (planId) { url.searchParams.set("plan", String(planId)); url.searchParams.delete("new"); }
     else url.searchParams.delete("plan");
     if (selectedDay) url.searchParams.set("day", selectedDay);
     else url.searchParams.delete("day");
@@ -588,9 +254,9 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
         if (requested && own.some((p) => p.id === requested)) setPlanId(requested);
         else if (!q.has("new") && own.length) setPlanId(own[0].id);
         // fetch academic tree once
-        fetchAcademicTree(token, { student: String(s.id) }).then((t) => { if (live) setTree(t); }).catch(()=>{});
+        fetchAcademicTree(token, { student: String(s.id) }).then((t) => { if (live) setTree(t); }).catch(reason => { if (live) setError(apiErrorMessage(reason)); });
         // fetch fixed commitments for timeline
-        api<Commitment[]>(`/planning/commitments/?student=${s.id}`, token).then((cs)=>{ if(live) setCommitments(cs.filter(c=>c.active)); }).catch(()=>{});
+        allPages<Commitment>(`/planning/commitments/?student=${s.id}`, token).then((rows)=>{ if(live) setCommitments(rows.filter(c=>c.active)); }).catch(reason => { if (live) setError(apiErrorMessage(reason)); });
       })
       .catch((r) => { if (live) setError(apiErrorMessage(r)); })
       .finally(() => { if (live) setLoading(false); });
@@ -600,18 +266,11 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
   // load plan detail
   const refresh = useCallback(async (id = planId) => {
     if (!id) return;
-    const p = await api<Plan>(`/planning/plans/${id}/`, token);
+    const p = await client.getPlan(id);
+    if (planRef.current && planRef.current.id !== id) return;
     setPlan(p);
     setPlans((cur) => cur.map((x) => (x.id === id ? p : x)));
-  }, [planId, token]);
-
-  // sync activeDay to first day of plan
-  useEffect(() => {
-    if (plan && plan.days && plan.days.length && !activeDay) {
-      const sorted = [...plan.days].sort((a,b)=> a.date.localeCompare(b.date));
-      queueMicrotask(()=> setActiveDay(sorted[0].date));
-    }
-  }, [plan, activeDay]);
+  }, [client, planId, setPlan]);
 
   useEffect(() => {
     if (!planId) return;
@@ -620,225 +279,158 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
       .then((p) => { if (live) setPlan(p); })
       .catch((r) => { if (live) setError(apiErrorMessage(r)); });
     return () => { live = false; };
-  }, [planId, token]);
+  }, [planId, token, setPlan]);
 
+  const creatingPlan = useRef(false);
   async function createPlan(e: React.FormEvent) {
     e.preventDefault();
-    if (!student) return;
+    if (!student || creatingPlan.current) return;
+    creatingPlan.current = true; setPendingWrites(count => count + 1);
     setBusy(true); setError("");
     try {
       const end = new Date(`${weekStart}T12:00:00`);
       end.setDate(end.getDate() + 6);
       const endDate = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2,"0")}-${String(end.getDate()).padStart(2,"0")}`;
       const effectiveTitle = title.trim() || planTitleSuggestion(weekStart, endDate);
-      const created = await api<Plan>("/planning/plans/", token, "POST", { student: student.id, start_date: weekStart, end_date: endDate, title: effectiveTitle });
-      setPlans((c) => [created, ...c]); setPlanId(created.id); setPlan(created); setTitle(""); notify(setNotice, "برنامه هفتگی ساخته شد.");
-    } catch (r) { setError(apiErrorMessage(r)); } finally { setBusy(false); }
+      const created = await client.createPlan({ student: student.id, start_date: weekStart, end_date: endDate, title: effectiveTitle });
+      setHasSaved(true); setSaveFailed(false); setPlans((c) => [created, ...c]); setPlanId(created.id); setPlan(created); setTitle(""); setShowNewPlan(false); notify(setNotice, "برنامه هفتگی ساخته شد.");
+    } catch (r) { setSaveFailed(true); setError(apiErrorMessage(r)); } finally { creatingPlan.current = false; setBusy(false); setPendingWrites(count => count - 1); }
   }
 
+  async function perform<T>(key: string, operation: () => Promise<T>): Promise<T> {
+    if (locks.current.has(key)) throw new Error("این عملیات در حال انجام است؛ منتظر بمانید.");
+    locks.current.add(key); setActionKeys(new Set(locks.current));
+    const task = queue.current.then(operation);
+    queue.current = task.catch(() => {});
+    try { return await task; }
+    finally { locks.current.delete(key); setActionKeys(new Set(locks.current)); }
+  }
+
+  const creatingDays = useRef(new Map<string, Promise<PlanDay>>());
   async function ensureDay(date: string): Promise<PlanDay | null> {
-    if (!plan) return null;
-    const existing = plan.days?.find((d) => d.date === date);
+    const current = planRef.current;
+    if (!current) return null;
+    const existing = current.days?.find(day => day.date === date);
     if (existing) return existing;
-    const created = await api<PlanDay>("/planning/days/", token, "POST", { plan: plan.id, date });
-    await refresh();
-    // return created (with empty items)
-    return { ...created, items: [] } as PlanDay;
+    const key = `${current.id}:${date}`;
+    const pending = creatingDays.current.get(key);
+    if (pending) return pending;
+    const creation = client.createDay(current.id, date).then(created => {
+      const canonical = { ...created, items: created.items || [] };
+      setPlan(previous => previous?.id === current.id ? { ...previous, days: [...(previous.days || []).filter(day => day.id !== canonical.id), canonical] } : previous);
+      return canonical;
+    }).finally(() => creatingDays.current.delete(key));
+    creatingDays.current.set(key, creation);
+    return creation;
+  }
+
+  async function mutate(key: string, operation: () => Promise<unknown>, optimistic?: (value: Plan) => Plan, message?: string) {
+    return perform(key, async () => {
+      const snapshot = planRef.current;
+      if (!snapshot) return;
+      setError(""); setSaveFailed(false); setPendingWrites(count => count + 1);
+      if (optimistic) setPlan(optimistic(snapshot));
+      try {
+        const result = await operation();
+        if (result && typeof result === "object" && "plan_day" in result) {
+          const item = result as PlanItem;
+          setPlan(previous => previous?.id === snapshot.id ? { ...previous, days: previous.days?.map(day => ({ ...day, items: [...day.items.filter(old => old.id !== item.id), ...(day.id === item.plan_day ? [item] : [])] })) } : previous);
+        } else if (result && typeof result === "object" && "items" in result) {
+          const day = result as PlanDay;
+          setPlan(previous => previous?.id === snapshot.id ? { ...previous, days: previous.days?.map(old => old.id === day.id ? day : old) } : previous);
+        } else if (result && typeof result === "object" && "status" in result) {
+          const summary = result as Plan;
+          setPlan(previous => previous?.id === snapshot.id ? { ...previous, ...summary, days: previous.days } : previous);
+        }
+        await refresh(snapshot.id).catch(reason => setError(`تغییرات ذخیره شد؛ دریافت تازه‌ترین برنامه ناموفق بود: ${apiErrorMessage(reason)}`));
+        setHasSaved(true); if (message) notify(setNotice, message);
+      } catch (reason) {
+        if (planRef.current?.id === snapshot.id) setPlan(snapshot);
+        setSaveFailed(true); setError(apiErrorMessage(reason));
+        throw reason;
+      } finally { setPendingWrites(count => count - 1); }
+    });
+  }
+
+  async function canonicalItem(item: PlanItem) {
+    setPlan(previous => previous?.days?.some(day => day.id === item.plan_day) ? { ...previous, days: previous.days.map(day => ({ ...day, items: [...day.items.filter(old => old.id !== item.id), ...(day.id === item.plan_day ? [item] : [])] })) } : previous);
+    // A failed read after a confirmed write must not turn a successful create into a retry/duplicate.
+    if (planRef.current) await refresh(planRef.current.id).catch(reason => setError(`فعالیت ثبت شد؛ دریافت تازه‌ترین برنامه ناموفق بود: ${apiErrorMessage(reason)}`));
+    setHasSaved(true); setSaveFailed(false); notify(setNotice, "فعالیت ثبت شد.");
   }
 
   async function handleDuplicate(item: PlanItem) {
-    // optimistic: copy via dedicate endpoint
-    const snapshot = plan;
-    try {
-      await api(`/planning/items/${item.id}/duplicate/`, token, "POST", {});
-      await refresh();
-      notify(setNotice, "تکثیر انجام شد.");
-    } catch (reason: unknown) {
-      setError(apiErrorMessage(reason));
-      if (snapshot) setPlan(snapshot);
-    }
+    try { await mutate(`item:${item.id}`, () => client.duplicateItem(item.id), undefined, "فعالیت کپی شد."); } catch { /* visible error from mutate */ }
   }
-
   async function handleDelete(item: PlanItem) {
-    if (!window.confirm("این فعالیت حذف شود؟")) return;
-    const snapshot = plan ? JSON.parse(JSON.stringify(plan)) : null;
-    // optimistic remove
-    if (plan) {
-      setPlan({ ...plan, days: plan.days?.map((d) => ({ ...d, items: d.items.filter((i) => i.id !== item.id) })) } as Plan);
-    }
-    try {
-      await api(`/planning/items/${item.id}/`, token, "DELETE");
-      await refresh();
-      notify(setNotice, "فعالیت حذف شد.");
-    } catch (reason: unknown) {
-      setError(apiErrorMessage(reason));
-      if (snapshot) setPlan(snapshot);
-      await refresh().catch(()=>{});
-    }
+    try { await mutate(`item:${item.id}`, () => client.deleteItem(item.id), previous => ({ ...previous, days: previous.days?.map(day => ({ ...day, items: day.items.filter(old => old.id !== item.id) })) }), "فعالیت حذف شد."); setDeleteTarget(null); } catch { /* retain confirmation for retry */ }
   }
-
+  async function transfer(item: PlanItem, target: { date: string; minutes: number | null; ordering?: number; error?: string | null }) {
+    if (target.error) { setError(target.error); return; }
+    const duration = itemDuration(item);
+    const start = target.minutes === null ? null : minutesToTime(target.minutes);
+    const end = target.minutes === null ? null : minutesToTime(target.minutes + duration);
+    try {
+      await perform(`item:${item.id}`, async () => {
+        const snapshot = planRef.current; if (!snapshot) return;
+        const day = await ensureDay(target.date); if (!day) return;
+        setPendingWrites(count => count + 1); setError("");
+        const moved = { ...item, plan_day: day.id, start_time: start, end_time: end, planned_duration_minutes: duration, ordering: target.ordering ?? day.items.length };
+        setPlan(previous => previous?.id === snapshot.id ? { ...previous, days: previous.days?.map(entry => ({ ...entry, items: [...entry.items.filter(old => old.id !== item.id), ...(entry.id === day.id ? [moved] : [])] })) } : previous);
+        try {
+          const canonical = await client.moveItem(item.id, { target_day: day.id, start_time: start, end_time: end, planned_duration_minutes: duration, ordering: target.ordering });
+          await canonicalItem(canonical); setHasSaved(true); setSaveFailed(false); notify(setNotice, "فعالیت جابه‌جا شد.");
+        } catch (reason) { if (planRef.current?.id === snapshot.id) setPlan(snapshot); setSaveFailed(true); throw reason; }
+        finally { setPendingWrites(count => count - 1); }
+      });
+    } catch (reason) { setError(`${apiErrorMessage(reason)} تغییرات برگردانده شد.`); }
+  }
   async function handleMove() {
-    if (!moveItem || !moveTarget || !plan) return;
-    const snapshot = JSON.parse(JSON.stringify(plan)) as Plan;
-    // find target day
-    let targetDay = plan.days?.find((d) => d.date === moveTarget);
-    if (!targetDay) {
-      try {
-        const created = await api<PlanDay>("/planning/days/", token, "POST", { plan: plan.id, date: moveTarget });
-        await refresh();
-        targetDay = { ...created, items: [] } as unknown as PlanDay;
-      } catch (r) { setError(apiErrorMessage(r)); return; }
-    }
-    // optimistic: move in UI
-    setPlan((prev) => {
-      if (!prev) return prev;
-      const next = { ...prev, days: prev.days?.map((d) => ({ ...d, items: [...d.items] })) } as Plan;
-      // remove from source
-      for (const d of next.days || []) {
-        d.items = d.items.filter((i) => i.id !== moveItem.id);
-      }
-      const td = next.days?.find((d) => d.date === moveTarget);
-      if (td) {
-        const moved = { ...moveItem, plan_day: td.id };
-        td.items = [...td.items, moved];
-      }
-      return next;
-    });
+    if (!moveItem || !moveTarget) return;
+    const minutes = moveUnscheduled ? null : clampTime(timeToMinutes(moveTime || "06:00"), itemDuration(moveItem));
+    await transfer(moveItem, { date: moveTarget, minutes });
+    // Keep the move dialog open if the server rejected the operation.
+    const actual = planRef.current?.days?.find(day => day.date === moveTarget)?.items.find(item => item.id === moveItem.id);
+    if (actual && actual.start_time?.slice(0,5) === (minutes === null ? undefined : minutesToTime(minutes))) setMoveItem(null);
+  }
+
+  function startCopy(day: PlanDay) { setSelectedDay(null); setChooseCopyMethod(false); setCopySource(day); setCopyConfirm(null); setError(""); }
+  function cancelCopy() { if (!copyBusy) { setCopySource(null); setCopyConfirm(null); } }
+  async function executeCopy(target: PlanDay, mode: "append" | "replace") {
+    if (!copySource || copying.current) return;
+    copying.current = true; const source = copySource; setCopyBusy(true);
+    try { await mutate(`copy:${source.id}`, () => client.copyDay(source.id,target.id,mode), undefined, `فعالیت‌های ${persianDate(source.date)} به ${persianDate(target.date)} اضافه شدند.`); setCopySource(null); setCopyConfirm(null); }
+    catch { /* copy mode stays open, destination is never overwritten on failure */ }
+    finally { copying.current = false; setCopyBusy(false); }
+  }
+  async function handleCopyTargetClick(date: string, existing?: PlanDay | null) {
+    if (!copySource || copyBusy || copySource.date === date) return;
     try {
-      await api(`/planning/items/${moveItem.id}/move/`, token, "POST", { target_day: targetDay!.id, start_time: moveItem.start_time || undefined });
-      await refresh();
-      setMoveItem(null); setMoveTarget("");
-      notify(setNotice, "جابه‌جایی انجام شد.");
-    } catch {
-      setError("جابه‌جایی انجام نشد؛ تغییرات برگردانده شد.");
-      setPlan(snapshot);
-      await refresh().catch(()=>{});
-    }
+      const target = existing || await ensureDay(date); if (!target) return;
+      if (chooseCopyMethod) { setCopyConfirm({ target, mode: "append" }); return; }
+      await executeCopy(target,"append");
+    } catch (reason) { setError(apiErrorMessage(reason)); }
   }
-
-  async function handleReorder(day: PlanDay, fromId: number, toIndex: number) {
-    const snapshot = plan ? JSON.parse(JSON.stringify(plan)) : null;
-    // optimistic reorder
-    if (plan) {
-      setPlan((prev) => {
-        if (!prev) return prev;
-        const next = { ...prev, days: prev.days?.map((d) => ({ ...d, items: [...d.items] })) } as Plan;
-        const d = next.days?.find((x) => x.id === day.id);
-        if (!d) return prev;
-        const idx = d.items.findIndex((i) => i.id === fromId);
-        if (idx === -1) return prev;
-        const [moved] = d.items.splice(idx, 1);
-        const clamped = Math.max(0, Math.min(toIndex, d.items.length));
-        d.items.splice(clamped, 0, moved);
-        d.items.forEach((it, i) => (it.ordering = i));
-        return next;
-      });
-    }
-    try {
-      // compute new ordering ids
-      const currentDay = plan?.days?.find((d) => d.id === day.id);
-      if (!currentDay) throw new Error("day missing");
-      const ids = currentDay.items.map((i) => i.id);
-      const fromIdx = ids.indexOf(fromId);
-      if (fromIdx === -1) throw new Error("item missing");
-      ids.splice(fromIdx, 1);
-      const clamped = Math.max(0, Math.min(toIndex, ids.length));
-      ids.splice(clamped, 0, fromId);
-      await api(`/planning/days/${day.id}/reorder/`, token, "POST", { ordering: ids });
-      await refresh();
-    } catch {
-      setError("جابه‌جایی انجام نشد؛ تغییرات برگردانده شد.");
-      if (snapshot) setPlan(snapshot);
-      await refresh().catch(()=>{});
-    }
+  useEffect(() => {
+    if (!copySource || copyBusy) return;
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { setCopySource(null); setCopyConfirm(null); } };
+    window.addEventListener("keydown",escape); return () => window.removeEventListener("keydown",escape);
+  },[copySource,copyBusy]);
+  async function addToDay(date: string) {
+    try { await perform(`day:${date}`, async () => { const day = await ensureDay(date); if (day) setQuickAddDay(date); }); }
+    catch (reason) { setError(apiErrorMessage(reason)); }
   }
-
-  // Copy Day handlers — قانون اصلی: تمام ۷ روز همیشه فعال، کپی از هر روز به هر ۶ روز دیگر با یک کلیک (append) بدون تایید دوم
-  function startCopy(day: PlanDay){ setCopySource(day); setCopyConfirm(null); setError(""); notify(setNotice, "روز مقصد را انتخاب کنید — روی کادر هر روز دیگری کلیک کنید تا فوراً کپی شود"); }
-  function cancelCopy(){ setCopySource(null); setCopyConfirm(null); }
-  async function executeCopy(target: PlanDay, mode: "append"|"replace"){
-    if(!copySource) return;
-    setCopyBusy(true); setError("");
-    try {
-      await api(`/planning/days/${copySource.id}/copy-day/`, token, "POST", { target_day: target.id, mode });
-      await refresh();
-      notify(setNotice, "برنامه با موفقیت کپی شد");
-      setCopySource(null); setCopyConfirm(null);
-    } catch(reason: unknown){
-      const msg = planningError(reason);
-      setError(msg);
-    } finally { setCopyBusy(false); }
+  async function publishPlan() {
+    if (!plan) return;
+    try { await mutate(`publish:${plan.id}`, () => client.publish(plan.id), undefined, "برنامه منتشر شد."); } catch { /* visible */ }
   }
-  // کلیک روی کادر روز مقصد → فوراً append کپی (بدون مودال). برای روز خالی ابتدا PlanDay ساخته می‌شود.
-  async function handleCopyTargetClick(date: string, existingDay?: PlanDay | null){
-    if(!copySource || copyBusy) return;
-    if(existingDay && copySource.id === existingDay.id) return;
-    // اگر همان تاریخ مبدأ باشد کپی نکن
-    if(copySource.date === date) return;
-    let target = existingDay || null;
-    if(!target){
-      const created = await ensureDay(date);
-      if(!created) { setError("ساخت روز مقصد ناموفق بود."); return; }
-      target = created;
-    }
-    // بدون پرسش جایگزینی — همیشه append فوری طبق الزام محصول
-    await executeCopy(target, "append");
+  async function exportPlan(format: "excel" | "pdf") {
+    if (!plan) return;
+    try { await perform(`export:${format}`, () => client.export(plan.id,format)); } catch (reason) { setError(apiErrorMessage(reason)); }
   }
-  // Escape to cancel copy
-  useEffect(()=>{
-    if(!copySource) return;
-    function onKey(e: KeyboardEvent){ if(e.key==="Escape") cancelCopy(); }
-    window.addEventListener("keydown", onKey);
-    return ()=> window.removeEventListener("keydown", onKey);
-  }, [copySource]);
-
-  // DnD handlers
-  function onDragStart(e: React.DragEvent, itemId: number) {
-    e.dataTransfer.setData("text/plain", String(itemId));
-    e.dataTransfer.effectAllowed = "move";
-  }
-  function onDrop(e: React.DragEvent, targetDay: PlanDay, targetIndex?: number) {
-    e.preventDefault();
-    const id = Number(e.dataTransfer.getData("text/plain"));
-    if (!id) return;
-    // if dropped on same day, reorder; else move
-    const sourceDay = plan?.days?.find((d) => d.items.some((i) => i.id === id));
-    if (!sourceDay) return;
-    if (sourceDay.id === targetDay.id) {
-      const to = targetIndex ?? targetDay.items.length;
-      handleReorder(targetDay, id, to);
-    } else {
-      // move to targetDay at position
-      const item = sourceDay.items.find((i) => i.id === id);
-      if (!item) return;
-      // optimistic move then API
-      const snapshot = plan ? JSON.parse(JSON.stringify(plan)) : null;
-      setPlan((prev) => {
-        if (!prev) return prev;
-        const next = { ...prev, days: prev.days?.map((d) => ({ ...d, items: [...d.items] })) } as Plan;
-        for (const d of next.days || []) d.items = d.items.filter((i) => i.id !== id);
-        const td = next.days?.find((d) => d.id === targetDay.id);
-        if (td) {
-          const moved = { ...item, plan_day: td.id };
-          const idx = targetIndex ?? td.items.length;
-          td.items.splice(idx, 0, moved);
-          td.items.forEach((it, i) => (it.ordering = i));
-        }
-        return next;
-      });
-      api(`/planning/items/${id}/move/`, token, "POST", { target_day: targetDay.id, ordering: targetIndex ?? undefined })
-        .then(() => refresh())
-        .catch(() => {
-          setError("جابه‌جایی انجام نشد؛ تغییرات برگردانده شد.");
-          if (snapshot) setPlan(snapshot);
-          refresh().catch(()=>{});
-        });
-    }
-  }
-
-
 
   const [showNewPlan, setShowNewPlan] = useState(false);
+  useDialogFocus(!loading && (showNewPlan || !!editingItem || !!copyConfirm || !!moveItem || !!deleteTarget), () => { setShowNewPlan(false); setEditingItem(null); setCopyConfirm(null); setMoveItem(null); setDeleteTarget(null); });
   // open modal if ?new=1
   useEffect(()=>{
     const q=new URLSearchParams(window.location.search);
@@ -848,20 +440,22 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
   const [topMetrics, setTopMetrics] = useState<{plannedMinutes:number; actualMinutes:number; plannedTests:number; actualTests:number; completion:number|null}|null>(null);
   // mirror MetricsBar fetch into topMetrics (lightweight)
   useEffect(()=>{
-    if(!plan?.id){ queueMicrotask(()=> setTopMetrics(null)); return; }
+    if(!plan?.id || plan.start_date > tehranTodayISO()){ queueMicrotask(()=> setTopMetrics(null)); return; }
     const plannedMinutes=(plan.days||[]).flatMap(d=>d.items).reduce((a,i)=>a+(i.planned_duration_minutes||0),0);
     const plannedTests=(plan.days||[]).flatMap(d=>d.items).reduce((a,i)=>a+(i.test_count||0),0);
     let live=true;
-    api<unknown>(`/counselor/students/${plan.student}/progress/?start_date=${plan.start_date}&end_date=${plan.end_date}`, token).then((res: unknown)=>{
+    api<unknown>(`/counselor/students/${plan.student}/progress/?start_date=${plan.start_date}&end_date=${plan.end_date > tehranTodayISO() ? tehranTodayISO() : plan.end_date}`, token).then((res: unknown)=>{
       if(!live) return;
-      const r=res as {planned_items?:{actual_minutes:number|null; actual_tests:number|null; status:string}[]};
+      const r=res as {planned_items?:{id:number;actual_minutes:number|null; actual_tests:number|null; status:string}[]};
       if(r && Array.isArray(r.planned_items)){
-        const actualMinutes=r.planned_items.reduce((a:number,it:{actual_minutes:number|null})=>a+(it.actual_minutes||0),0);
-        const actualTests=r.planned_items.reduce((a:number,it:{actual_tests:number|null})=>a+(it.actual_tests||0),0);
-        const comp = r.planned_items.length ? Math.round(r.planned_items.filter((it:{status:string})=>it.status==="COMPLETED").length*100/r.planned_items.length) : null;
+        const ids = new Set((plan.days || []).flatMap(day => day.items).map(item => item.id));
+        const actualItems = r.planned_items.filter(item => ids.has(item.id));
+        const actualMinutes=actualItems.reduce((a:number,it:{actual_minutes:number|null})=>a+(it.actual_minutes||0),0);
+        const actualTests=actualItems.reduce((a:number,it:{actual_tests:number|null})=>a+(it.actual_tests||0),0);
+        const comp = actualItems.length ? Math.round(actualItems.filter((it:{status:string})=>it.status==="COMPLETED").length*100/actualItems.length) : null;
         setTopMetrics({plannedMinutes, actualMinutes, plannedTests, actualTests, completion: comp});
-      } else setTopMetrics({plannedMinutes, actualMinutes:0, plannedTests, actualTests:0, completion:null});
-    }).catch(()=>{ if(live) setTopMetrics({plannedMinutes, actualMinutes:0, plannedTests, actualTests:0, completion:null});});
+      } else setTopMetrics(null);
+    }).catch(reason => { if(live) { setTopMetrics(null); setError(`دریافت عملکرد ناموفق بود: ${apiErrorMessage(reason)}`); } });
     return()=>{live=false;};
   },[plan, token]);
 
@@ -895,8 +489,9 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
                 </select>
               )}
             </div>
-            <div className="ws-toolbar-actions">
-              {plan && <><button type="button" onClick={async()=>{ try{ await downloadPlanExport(plan.id,"excel",token);}catch(r){ setError(apiErrorMessage(r));}}}>Excel</button><button type="button" onClick={async()=>{ try{ await downloadPlanExport(plan.id,"pdf",token);}catch(r){ setError(apiErrorMessage(r));}}}>PDF</button></>}
+            <div className="ws-toolbar-actions"><span className="ws-save-state" role="status">{pendingWrites ? "در حال ذخیره…" : saveFailed ? "خطا در ذخیره" : hasSaved ? "ذخیره شد" : ""}</span>
+              {plan && <><button type="button" disabled={actionKeys.has("export:excel")} onClick={() => { void exportPlan("excel"); }}>Excel</button><button type="button" disabled={actionKeys.has("export:pdf")} onClick={() => { void exportPlan("pdf"); }}>PDF</button></>}
+              {plan?.status === "DRAFT" && <button type="button" className="ws-primary" disabled={actionKeys.has(`publish:${plan.id}`)} onClick={() => { void publishPlan(); }}>{actionKeys.has(`publish:${plan.id}`) ? "در حال انتشار…" : "انتشار برنامه"}</button>}
               <button type="button" className="ws-toolbar-new" onClick={()=> setShowNewPlan(true)}>＋ برنامه جدید</button>
             </div>
           </div>
@@ -904,8 +499,8 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
       )}
       {copySource && (
         <div className="ws-copy-banner" role="status">
-          <span>«{persianDate(copySource.date)}» به‌عنوان مبدأ انتخاب شد — روز مقصد را انتخاب کنید</span>
-          <button type="button" className="ws-subtle" onClick={cancelCopy}>لغو کپی (Esc)</button>
+          <span>{copyBusy ? "در حال کپی و ذخیره…" : `«${persianDate(copySource.date)}» به‌عنوان مبدأ انتخاب شد — روز مقصد را انتخاب کنید`}</span>
+          <div className="panel-row-actions"><button type="button" aria-pressed={chooseCopyMethod} onClick={() => setChooseCopyMethod(value => !value)}>{chooseCopyMethod ? "انتخاب روش کپی فعال است" : "انتخاب روش افزودن / جایگزینی"}</button><button type="button" className="ws-subtle" onClick={cancelCopy}>لغو کپی (Esc)</button></div>
         </div>
       )}
       {/* New plan modal (no longer always visible) */}
@@ -914,9 +509,10 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
           <div className="ws-modal-card" onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <h3 style={{fontSize:".9rem",fontWeight:700}}>برنامه جدید</h3>
-              <button type="button" className="ws-subtle" onClick={()=> setShowNewPlan(false)}>✕</button>
+              <button type="button" className="ws-subtle" aria-label="بستن برنامه جدید" onClick={()=> setShowNewPlan(false)}><PanelIcon name="close"/></button>
             </div>
-            <form onSubmit={async(e)=>{ await createPlan(e); setShowNewPlan(false); }} style={{display:"grid",gap:".6rem"}}>
+            {error && <p className="ws-error" role="alert">{error}</p>}
+            <form onSubmit={createPlan} style={{display:"grid",gap:".6rem"}}>
               <div className="ws-date-picker">
                 <label>شروع برنامه
                   <input type="date" required value={weekStart} onChange={(e)=> setWeekStart(e.target.value)} />
@@ -934,126 +530,25 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
         </div>
       )}
 
-      {!plan && !loading && <div className="ws-empty"><p>هنوز فعالیتی برای این هفته ثبت نشده.</p><button className="ws-primary" onClick={() => document.getElementById("ws-create-trigger")?.scrollIntoView({behavior:"smooth"})}>اولین فعالیت را اضافه کن</button></div>}
+      {!plan && !loading && <div className="ws-empty"><h2>اولین برنامه هفتگی را بسازید</h2><p>تاریخ شروع را انتخاب کنید و فعالیت‌های هفت روز را بچینید.</p><button className="ws-primary" onClick={() => setShowNewPlan(true)}>ساخت برنامه جدید</button></div>}
 
       {plan && (
         <>
           {/* Mobile day tabs */}
           <nav className="ws-day-tabs" aria-label="روزهای هفته">
             {days.map((d) => (
-              <button key={d} className={selectedDay === d ? "is-active" : ""} onClick={() => setSelectedDay(d)}>{persianDate(d).split("،")[0]}</button>
+              <button key={d} aria-pressed={selectedDay === d} className={selectedDay === d ? "is-active" : ""} onClick={() => setSelectedDay(d)}>{formatJalaliShort(d)}{d === today ? " · امروز" : ""}</button>
             ))}
-            <button className={!selectedDay ? "is-active" : ""} onClick={() => setSelectedDay(null)}>همه روزها</button>
+            <button aria-pressed={!selectedDay} className={!selectedDay ? "is-active" : ""} onClick={() => setSelectedDay(null)}>همه روزها</button>
           </nav>
 
-          <div className="ws-stack" aria-label="روزهای هفته">
-            {days.filter((d) => !selectedDay || d === selectedDay).map((date) => {
-              const day = plan.days?.find((x) => x.date === date);
-              const items = day?.items ? [...day.items].sort((a,b)=> a.ordering - b.ordering) : [];
-              const mins = items.reduce((a,i)=> a+(i.planned_duration_minutes||0),0);
-              const tests = items.reduce((a,i)=> a+(i.test_count||0),0);
-              const h=Math.floor(mins/60), m=mins%60;
-              const freeHint = ""; // free time computed via commitments if needed
-              const isCopySource = !!copySource && copySource.date === date;
-              const isCopyTarget = !!copySource && copySource.date !== date;
-              return (
-                <section
-                  key={date}
-                  className={`ws-day-row ${date === today ? "is-today" : ""} ${date < today ? "is-past" : ""} ${isCopySource ? "is-copy-source" : ""} ${isCopyTarget ? "is-copy-target" : ""}`}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => { if(day) onDrop(e, day); }}
-                  onClick={() => { if(copySource && copySource.date !== date) handleCopyTargetClick(date, day || null); }}
-                  style={isCopyTarget ? {cursor:"pointer"} : undefined}
-                  aria-disabled={false}
-                >
-                  <header
-                    className="ws-day-row-head"
-                    style={isCopyTarget ? {cursor:"pointer"} : undefined}
-                  >
-                    <div className="ws-day-row-title">
-                      {date < today && <span className="ws-badge-past">گذشته</span>}
-                      {date === today && <span className="ws-badge-today">امروز</span>}
-                      <h3>{persianDate(date)}</h3>
-                      <small>{formatJalaliShort(date)}</small>
-                    </div>
-                    <div className="ws-day-row-summary">
-                      <span><b>{toFaDigits(String(items.length))}</b> فعالیت</span>
-                      <span><b>{toFaDigits(String(h))}:{toFaDigits(String(m).padStart(2,"0"))}</b> مطالعه</span>
-                      <span><b>{toFaDigits(String(tests))}</b> تست</span>
-                      {freeHint && <span className="ws-free">{freeHint}</span>}
-                    </div>
-                    <div style={{display:"flex",gap:".3rem",alignItems:"center"}}>
-                      <button
-                        type="button"
-                        className="ws-copy"
-                        aria-label={`کپی ${persianDate(date)}`}
-                        disabled={!day || (!!copySource && copySource.date===date)}
-                        onClick={(e)=>{ e.stopPropagation(); if(day) startCopy(day); }}
-                        title={day ? "کپی این روز به روز دیگر (یک کلیک روی مقصد)" : "روز خالی — چیزی برای کپی ندارد"}
-                      >⧉</button>
-                      <button
-                        type="button"
-                        className="ws-add"
-                        disabled={false}
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          if (!day) {
-                            const nd = await ensureDay(date);
-                            if (nd) setQuickAddDay(date);
-                          } else setQuickAddDay(quickAddDay === date ? null : date);
-                        }}
-                        aria-label={`افزودن باکس برای ${date}`}
-                      >
-                        ＋ افزودن باکس
-                      </button>
-                    </div>
-                  </header>
+          <TimelineBoard dates={days.filter(date => !selectedDay || date === selectedDay)} days={plan.days || []} commitments={commitments} pending={new Set([...actionKeys].filter(key => key.startsWith("item:")).map(key => Number(key.split(":")[1])))} copyDate={copySource?.date || null} copyBusy={copyBusy} onCopy={startCopy} onCopyTarget={(date,day) => { void handleCopyTargetClick(date,day); }} onAdd={date => { void addToDay(date); }} onDrop={transfer} onEdit={setEditingItem} onDelete={setDeleteTarget} onDuplicate={item => { void handleDuplicate(item); }} onMoveMenu={(item,date) => { setMoveItem(item); setMoveTarget(date); setMoveTime(item.start_time?.slice(0,5) || "06:00"); setMoveUnscheduled(!item.start_time); }}/>
 
-                  <div className="ws-boxes" onDragOver={(e)=>e.preventDefault()} onClick={(e)=>{ if(copySource) e.stopPropagation(); }}>
-                    {items.length === 0 ? <span className="ws-boxes-empty">فعالیتی ثبت نشده</span> : items.map((item, idx) => (
-                      <div key={item.id} onDragOver={(e)=>e.preventDefault()} onDrop={(e)=> onDrop(e, day!, idx)}>
-                        <PlanActivityCard
-                          item={item}
-                          draggableProps={{
-                            draggable: !!item.counselor_editable,
-                            onDragStart: (e) => onDragStart(e as unknown as React.DragEvent, item.id),
-                          }}
-                          onEdit={() => setEditingItem(item)}
-                          onDuplicate={() => handleDuplicate(item)}
-                          onMove={() => { setMoveItem(item); setMoveTarget(date); }}
-                          onDelete={() => handleDelete(item)}
-                          onAddNote={() => setEditingItem(item)}
-                        />
-                        {item.counselor_editable && items.length > 1 && (
-                          <div className="ws-reorder">
-                            <button aria-label="بالا" disabled={idx===0} onClick={()=> handleReorder(day!, item.id, idx-1)}>↑</button>
-                            <button aria-label="پایین" disabled={idx===items.length-1} onClick={()=> handleReorder(day!, item.id, idx+1)}>↓</button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    {day && items.length>0 && <div className="ws-drop-end" onDragOver={(e)=>e.preventDefault()} onDrop={(e)=> onDrop(e, day, items.length)}>رها کنید تا به انتها اضافه شود</div>}
-                  </div>
-
-                  {quickAddDay === date && tree && day && (
-                    <WizardAddBox
-                      token={token}
-                      dayId={day.id}
-                      ordering={items.length}
-                      tree={tree}
-                      onCreated={async () => { setQuickAddDay(null); await refresh(); notify(setNotice, "باکس ساخته شد."); }}
-                      onError={setError}
-                      onCancel={() => setQuickAddDay(null)}
-                    />
-                  )}
-                  {quickAddDay === date && !day && <p className="ws-hint">در حال ساخت روز…</p>}
-                </section>
-              );
-            })}
-          </div>
         </>
       )}
 
+      {quickAddDay && tree && plan?.days?.find(day => day.date === quickAddDay) && <WizardAddBox date={quickAddDay} token={token} dayId={plan.days.find(day => day.date === quickAddDay)!.id} ordering={Math.max(-1,...plan.days.find(day => day.date === quickAddDay)!.items.map(item => item.ordering))+1} tree={tree} onCreated={async item => { await canonicalItem(item); setQuickAddDay(null); }} onError={setError} onCancel={() => setQuickAddDay(null)}/>}
+      {deleteTarget && <div className="ws-modal" role="dialog" aria-modal="true" aria-label="حذف فعالیت"><div className="ws-modal-card"><h3>فعالیت حذف شود؟</h3><p>{deleteTarget.subject_name || deleteTarget.title}</p><p>این عمل فعالیت برنامه‌ریزی‌شده را حذف می‌کند.</p><div className="panel-row-actions"><button className="ws-danger" disabled={actionKeys.has(`item:${deleteTarget.id}`)} onClick={() => { void handleDelete(deleteTarget); }}>{actionKeys.has(`item:${deleteTarget.id}`) ? "در حال حذف…" : "حذف"}</button><button onClick={() => setDeleteTarget(null)}>لغو</button></div>{error && <p className="ws-error" role="alert">{error}</p>}</div></div>}
       {editingItem && tree && (
         <div className="ws-modal" role="dialog" aria-modal="true" aria-label="ویرایش فعالیت">
           <div className="ws-modal-card">
@@ -1065,7 +560,7 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
               tree={tree}
               initialItem={editingItem}
               mode="edit"
-              onCreated={async () => { setEditingItem(null); await refresh(); notify(setNotice, "تغییرات ذخیره شد."); }}
+              onCreated={async item => { await canonicalItem(item); setEditingItem(null); notify(setNotice, "تغییرات ذخیره شد."); }}
               onError={setError}
               onCancel={() => setEditingItem(null)}
             />
@@ -1083,6 +578,7 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
               <button type="button" style={{border:"1px solid #c0392b",color:"#c0392b",background:"white",borderRadius:".35rem",padding:".45rem .7rem"}} disabled={copyBusy} onClick={()=> { if(window.confirm("جایگزینی باعث حذف فعالیت‌های فعلی روز مقصد می‌شود. ادامه می‌دهید؟ اگر فعالیت‌ها دارای اجرای ثبت‌شده باشند جایگزینی انجام نخواهد شد.")) executeCopy(copyConfirm.target, "replace"); }}>جایگزینی کامل (با تأیید)</button>
               <button type="button" className="ws-subtle" onClick={()=> setCopyConfirm(null)}>انصراف</button>
             </div>
+            {error && <p className="ws-error" role="alert">{error}</p>}
             {copyBusy && <span style={{fontSize:".78rem"}}>در حال کپی…</span>}
           </div>
         </div>
@@ -1096,8 +592,11 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
                 {days.map((d)=> <option key={d} value={d}>{persianDate(d)} — {d}</option>)}
               </select>
             </label>
+            <label><span>بدون ساعت</span><input type="checkbox" checked={moveUnscheduled} onChange={event => setMoveUnscheduled(event.target.checked)}/></label>
+            {!moveUnscheduled && <label>ساعت مقصد<input type="time" step={900} value={moveTime} onChange={event => setMoveTime(event.target.value)}/></label>}
+            {error && <p className="ws-error" role="alert">{error}</p>}
             <div className="ws-modal-actions">
-              <button onClick={handleMove}>انتقال</button>
+              <button disabled={!!moveItem && actionKeys.has(`item:${moveItem.id}`)} onClick={handleMove}>انتقال</button>
               <button className="ws-subtle" onClick={()=> { setMoveItem(null); setMoveTarget(""); }}>انصراف</button>
             </div>
           </div>

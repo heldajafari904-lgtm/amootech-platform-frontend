@@ -1,0 +1,60 @@
+
+> amootech-platform-frontend@0.1.0 test:planner
+> node --experimental-strip-types --test tests/planner-time.test.mjs
+
+TAP version 13
+# (node:242243) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/sadegh/Projects/amootech/amootech-platform-frontend/src/app/counselor/students/%5Bid%5D/planning/plannerTime.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/sadegh/Projects/amootech/amootech-platform-frontend/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: RTL pointer coordinates for 06, 12, 18, 24 and scrolled content
+ok 1 - RTL pointer coordinates for 06, 12, 18, 24 and scrolled content
+  ---
+  duration_ms: 2.209367
+  type: 'test'
+  ...
+# Subtest: snap, duration limit and API midnight boundary
+ok 2 - snap, duration limit and API midnight boundary
+  ---
+  duration_ms: 0.447222
+  type: 'test'
+  ...
+# Subtest: single row keeps short cards readable without visual collisions
+ok 3 - single row keeps short cards readable without visual collisions
+  ---
+  duration_ms: 1.087315
+  type: 'test'
+  ...
+# Subtest: flexible activities fill earliest available slots inside the timeline
+ok 4 - flexible activities fill earliest available slots inside the timeline
+  ---
+  duration_ms: 0.852329
+  type: 'test'
+  ...
+# Subtest: overlapping timed items remain on one row with explicit conflicts
+ok 5 - overlapping timed items remain on one row with explicit conflicts
+  ---
+  duration_ms: 1.51561
+  type: 'test'
+  ...
+# Subtest: activity and commitment conflicts, touching boundaries allowed
+ok 6 - activity and commitment conflicts, touching boundaries allowed
+  ---
+  duration_ms: 1.375971
+  type: 'test'
+  ...
+# Subtest: Tehran clock crosses Gregorian day without UTC drift
+ok 7 - Tehran clock crosses Gregorian day without UTC drift
+  ---
+  duration_ms: 36.406309
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 371.589991

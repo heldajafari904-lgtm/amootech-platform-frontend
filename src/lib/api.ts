@@ -119,7 +119,20 @@ export async function api<T>(path: string, token: string, method = "GET", body?:
 }
 
 export async function apiBlob(path: string, token: string): Promise<Blob> {
-  return (await authorizedResponse(path, token)).blob();
+  const res = await authorizedResponse(path, token);
+  const ct = res.headers.get("content-type") || "";
+  const blob = await res.blob();
+  // If server returned JSON error with blob (e.g., LibreOffice failed, returns JSON with 500 but ok=false already handled)
+  // Guard: if blob is JSON, throw with its content
+  if (ct.includes("application/json")) {
+    try {
+      const text = await blob.text();
+      throw new Error(errorMessage(JSON.parse(text || "{}")));
+    } catch {
+      throw new Error("خطا در تولید فایل. دوباره تلاش کنید.");
+    }
+  }
+  return blob;
 }
 
 export async function allPages<T>(path: string, token: string): Promise<T[]> {

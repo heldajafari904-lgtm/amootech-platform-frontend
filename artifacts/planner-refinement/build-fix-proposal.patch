@@ -1,0 +1,79 @@
+--- /dev/null
++++ b/src/lib/studentPlanContext.tsx
+@@ -0,0 +1,12 @@
++"use client";
++
++import { createContext, useContext } from "react";
++import type { User } from "@/lib/api";
++
++export const StudentPlanContext = createContext<{ token: string; user: User } | null>(null);
++export function useStudentPlanAuth() {
++  const value = useContext(StudentPlanContext);
++  if (!value) throw new Error("Student plan context is unavailable");
++  return value;
++}
++
+--- a/src/app/student/plans/layout.tsx
++++ b/src/app/student/plans/layout.tsx
+@@ -1,15 +1,9 @@
+ "use client";
+ 
+ import Link from "next/link";
+-import { createContext, useContext, useEffect, useState } from "react";
++import { StudentPlanContext } from "@/lib/studentPlanContext";
++import { useEffect, useState } from "react";
+ import { accessToken, api, clearSession, errorMessage, obtainTokenPair, onSessionExpired, saveSession, SESSION_EXPIRED, User } from "@/lib/api";
+-
+-const StudentPlanContext = createContext<{ token: string; user: User } | null>(null);
+-export function useStudentPlanAuth() {
+-  const value = useContext(StudentPlanContext);
+-  if (!value) throw new Error("Student plan context is unavailable");
+-  return value;
+-}
+ 
+ export default function StudentPlansLayout({ children }: { children: React.ReactNode }) {
+   const [token, setToken] = useState("");
+--- a/src/app/student/plans/page.tsx
++++ b/src/app/student/plans/page.tsx
+@@ -4,7 +4,7 @@
+ import { useEffect, useState } from "react";
+ import { allPages } from "@/lib/api";
+ import { persianDate, Plan, planningError } from "@/lib/planning";
+-import { useStudentPlanAuth } from "./layout";
++import { useStudentPlanAuth } from "@/lib/studentPlanContext";
+ import { tehranTodayIso } from "@/lib/reports";
+ 
+ export default function StudentPlans() {
+--- a/src/app/student/plans/progress/page.tsx
++++ b/src/app/student/plans/progress/page.tsx
+@@ -6,7 +6,7 @@
+ import { persianDate } from "@/lib/planning";
+ import { daysAgoIso, tehranTodayIso, type ReportResponse } from "@/lib/reports";
+ import { PlannedActualChart, ReportInsights, ReportSummary, SubjectDistribution, TrendChart } from "@/components/ReportVisuals";
+-import { useStudentPlanAuth } from "../layout";
++import { useStudentPlanAuth } from "@/lib/studentPlanContext";
+ 
+ type Period = "seven" | "thirty" | "custom";
+ 
+--- a/src/app/student/plans/report/[date]/daily-report-page.tsx
++++ b/src/app/student/plans/report/[date]/daily-report-page.tsx
+@@ -6,7 +6,7 @@
+ import { api } from "@/lib/api";
+ import { DailyReport, DailyReportItem, minutesText, ReportStudent } from "@/lib/dailyReports";
+ import { persianDate, planningError } from "@/lib/planning";
+-import { useStudentPlanAuth } from "../../layout";
++import { useStudentPlanAuth } from "@/lib/studentPlanContext";
+ import ReportActivity from "./ReportActivity";
+ import UnplannedEditor from "./UnplannedEditor";
+ import { daysAgoIso, tehranTodayIso } from "@/lib/reports";
+--- a/src/app/student/plans/[id]/student-plan-detail.tsx
++++ b/src/app/student/plans/[id]/student-plan-detail.tsx
+@@ -4,7 +4,7 @@
+ import { useEffect, useRef, useState } from "react";
+ import { api } from "@/lib/api";
+ import { downloadPlanExport, persianDate, Plan, PlanItemExecution, planningError, weekDates } from "@/lib/planning";
+-import { useStudentPlanAuth } from "../layout";
++import { useStudentPlanAuth } from "@/lib/studentPlanContext";
+ import PlanBlock from "../PlanBlock";
+ import ExecutionControls from "../ExecutionControls";
+ import ManualPerformance from "../ManualPerformance";

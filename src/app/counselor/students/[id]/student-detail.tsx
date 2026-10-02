@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { PanelSkeleton } from "@/components/counselor/PanelUI";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, allPages, errorMessage } from "@/lib/api";
 import type { CounselorProgress, CounselorPlanItemProgress } from "@/lib/counselorProgress";
 import type { DailyReport } from "@/lib/dailyReports";
 import { minutesText, reportStatus } from "@/lib/dailyReports";
-import { Commitment, commitmentLabel, kindLabel, persianDate, Plan, Student, timeText } from "@/lib/planning";
+import { Commitment, commitmentLabel, formatJalaliDateTime, kindLabel, persianDate, Plan, Student, timeText } from "@/lib/planning";
 import type { ReportMetric, ReportResponse } from "@/lib/reports";
 import { daysAgoIso, tehranTodayIso } from "@/lib/reports";
 import { useCounselor } from "@/lib/counselorContext";
@@ -93,17 +94,17 @@ function TelegramCard({ id, token }: { id: string; token: string }) {
     setLoading(true); setError("");
     try { await api(`/admin/students/${id}/telegram/resend-plan/`, token, "POST", {}); setError("✅ ارسال مجدد انجام شد."); } catch (reason) { setError(errorMessage(reason)); } finally { setLoading(false); }
   }
-  const conn = status?.connection; const access = status?.access; const bot = status?.bot;
+  const conn = status?.connection; const bot = status?.bot;
   return <section className="workspace-panel"><h2>تلگرام</h2><p className="planning-error" role="alert">{error}</p>
     <div style={{display:"grid",gap:".4rem",fontSize:".85rem"}}>
       <div>گروه: {conn ? (conn.group_connected ? `متصل${conn.chat_title ? ` — ${conn.chat_title}` : ""}` : "متصل نیست") : "—"}</div>
       <div>دانش‌آموز: {conn ? (conn.student_connected ? `متصل${conn.telegram_username ? ` — @${conn.telegram_username}` : ""}` : "متصل نیست") : "—"}</div>
-      {bot && <><div>آخرین فعالیت: {bot.last_activity_at ? new Date(bot.last_activity_at).toLocaleString("fa-IR") : "—"}</div><div>آخرین خطا: {bot.last_error_message || "—"}</div><div>ربات: {bot.reachable ? "Online" : "Unavailable"}</div></>}
+      {bot && <><div>آخرین فعالیت: {bot.last_activity_at ? formatJalaliDateTime(bot.last_activity_at) : "—"}</div><div>آخرین خطا: {bot.last_error_message || "—"}</div><div>ربات: {bot.reachable ? "Online" : "Unavailable"}</div></>}
     </div>
     {!conn?.group_connected && <button type="button" disabled={loading} onClick={createLink} style={{marginTop:".6rem"}}>{loading ? "در حال ساخت…" : "ایجاد لینک اتصال گروه"}</button>}
     {link && <div style={{display:"grid",gap:".4rem",marginTop:".6rem",padding:".6rem",background:"#f8fafb",border:"1px solid #dce3e8",borderRadius:".45rem"}}>
       <a href={link.url} target="_blank" rel="noopener noreferrer" style={{wordBreak:"break-all",color:"#0e6477"}}>{link.url}</a>
-      <small style={{color:"#5a6d76"}}>انقضا: {new Date(link.expires_at).toLocaleString("fa-IR")}</small>
+      <small style={{color:"#5a6d76"}}>انقضا: {formatJalaliDateTime(link.expires_at)}</small>
       <div style={{display:"flex",gap:".4rem"}}>
         <a href={link.url} target="_blank" rel="noopener noreferrer"><button type="button">باز کردن در تلگرام</button></a>
         <button type="button" onClick={copyLink}>{copied ? "کپی شد!" : "کپی لینک"}</button>
@@ -119,6 +120,6 @@ export default function CounselorStudentDetail({ id }: { id: string }) {
   const load = useCallback(async () => { const [studentData, commitmentsData, plansData, progressData] = await Promise.all([api<Student>(`/students/${id}/`, token), allPages<Commitment>(`/planning/commitments/?student=${id}`, token), allPages<Plan>(`/planning/plans/?student=${id}`, token), api<CounselorProgress>(`/counselor/students/${id}/progress/`, token)]); setStudent(studentData); setCommitments(commitmentsData); setPlans(plansData); setProgress(progressData); }, [id, token]);
   useEffect(() => { void Promise.resolve().then(load).catch((reason) => setError(errorMessage(reason))).finally(() => setLoading(false)); }, [load]);
   const currentPlan = useMemo(() => { const today = tehranTodayIso(); return plans.find((plan) => plan.status === "PUBLISHED" && plan.start_date <= today && plan.end_date >= today); }, [plans]);
-  if (loading) return <main className="planning-content"><p>در حال آماده‌سازی فضای دانش‌آموز…</p></main>;
-  return <main className="planning-content student-workspace"><Link href="/counselor/students">← دانش‌آموزان</Link><p className="planning-error" role="alert">{error}</p>{student && progress && <><header className="workspace-header"><div><p className="workspace-eyebrow">فضای کار دانش‌آموز</p><h1>{student.user.first_name} {student.user.last_name}</h1><p>{student.grade_name || "پایه نامشخص"} · {student.field_name || "رشته نامشخص"}{student.school_name && ` · ${student.school_name}`}</p><small>{currentPlan ? `برنامه جاری: ${persianDate(currentPlan.start_date)} تا ${persianDate(currentPlan.end_date)} · منتشرشده` : plans.some((plan) => plan.status === "DRAFT") ? "برنامه جدید هنوز منتشر نشده" : "برای این دانش‌آموز هنوز برنامه فعالی ثبت نشده است."}</small></div><Link className="planning-primary" href={`/counselor/students/${id}/planning?new=1`}>+ نوشتن برنامه جدید</Link></header><TelegramCard id={id} token={token}/><nav className="workspace-tabs" aria-label="بخش‌های فضای دانش‌آموز">{tabs.map((item) => <button data-tab={item.id} className={tab === item.id ? "is-active" : ""} key={item.id} onClick={() => setTab(item.id)}>{item.label}</button>)}</nav>{tab === "overview" && <Overview id={id} progress={progress} currentPlan={currentPlan}/>} {tab === "plans" && <PlansTab id={id} plans={plans} progress={progress} token={token} reload={load}/>} {tab === "reports" && <ReportsTab id={id} token={token}/>} {tab === "progress" && <ProgressTab progress={progress}/>} {tab === "profile" && <ProfileTab student={student} commitments={commitments}/>}</>}</main>;
+  if (loading) return <main className="planning-content"><PanelSkeleton/></main>;
+  return <main className="planning-content student-workspace"><Link href="/counselor/students">← دانش‌آموزان</Link><p className="planning-error" role="alert">{error}</p>{student && progress && <><header className="workspace-header"><span className="panel-avatar" aria-hidden="true">{student.user.first_name?.[0] || student.user.username[0]}</span><div><p className="workspace-eyebrow">فضای کار دانش‌آموز</p><h1>{student.user.first_name} {student.user.last_name}</h1><p>{student.grade_name || "پایه نامشخص"} · {student.field_name || "رشته نامشخص"}{student.school_name && ` · ${student.school_name}`}</p><small>{currentPlan ? `برنامه جاری: ${persianDate(currentPlan.start_date)} تا ${persianDate(currentPlan.end_date)} · منتشرشده` : plans.some((plan) => plan.status === "DRAFT") ? "برنامه جدید هنوز منتشر نشده" : "برای این دانش‌آموز هنوز برنامه فعالی ثبت نشده است."}</small></div><Link className="planning-primary" href={`/counselor/students/${id}/planning?new=1`}>+ نوشتن برنامه جدید</Link></header><TelegramCard id={id} token={token}/><nav className="workspace-tabs" aria-label="بخش‌های فضای دانش‌آموز">{tabs.map((item) => <button data-tab={item.id} aria-pressed={tab === item.id} className={tab === item.id ? "is-active" : ""} key={item.id} onClick={() => setTab(item.id)}>{item.label}</button>)}</nav>{tab === "overview" && <Overview id={id} progress={progress} currentPlan={currentPlan}/>} {tab === "plans" && <PlansTab id={id} plans={plans} progress={progress} token={token} reload={load}/>} {tab === "reports" && <ReportsTab id={id} token={token}/>} {tab === "progress" && <ProgressTab progress={progress}/>} {tab === "profile" && <ProfileTab student={student} commitments={commitments}/>}</>}</main>;
 }

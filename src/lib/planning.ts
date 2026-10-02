@@ -106,6 +106,21 @@ export function weekdayFa(iso: string): string {
 
 export function persianDate(iso: string) { return formatJalaliShort(iso); }
 
+export function formatJalaliDateTime(isoDateTime: string): string {
+  // "2026-09-30T14:30:00Z" or "2026-09-30 14:30:00" -> "۱۰ مهر ۱۴۰۴، ۱۴:۳۰"
+  try {
+    const d = new Date(isoDateTime);
+    if (isNaN(d.getTime())) return isoDateTime;
+    const datePart = new Intl.DateTimeFormat("fa-IR-u-ca-persian", { day: "numeric", month: "long", year: "numeric" }).format(d);
+    const timePart = new Intl.DateTimeFormat("fa-IR", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Tehran" }).format(d);
+    // Check if time is meaningful (not midnight default)
+    if (timePart === "۰۰:۰۰" && !isoDateTime.includes("T") && !isoDateTime.includes(":")) return datePart;
+    return `${datePart}، ${timePart}`;
+  } catch { return isoDateTime; }
+}
+
+export function formatJalaliDate(iso: string): string { return formatJalali(iso, true); }
+
 export function weekDates(start: string, end: string) {
   const dates: string[] = [];
   const date = new Date(`${start}T12:00:00`);
@@ -190,15 +205,38 @@ export function freeWindowsForDay(dayDate: string, commitments: Commitment[], it
 export function timeText(value: string | null) { return value?.slice(0, 5) || ""; }
 
 export async function downloadPlanExport(planId: number, format: "pdf" | "excel", token: string) {
-  const blob = await (await import("@/lib/api")).apiBlob(`/planning/plans/${planId}/export/${format}/`, token);
+  const { apiBlob } = await import("@/lib/api");
+  const blob = await apiBlob(`/planning/plans/${planId}/export/${format}/`, token);
+  // Guard: server may return tiny JSON error blob
+  if (blob.size < 100) {
+    const text = await blob.text().catch(() => "");
+    if (text.trim().startsWith("{")) {
+      try {
+        const data = JSON.parse(text);
+        throw new Error(data.detail || data.message || "خطا در تولید فایل.");
+      } catch {
+        throw new Error(text || "خطا در تولید فایل.");
+      }
+    }
+  }
   const url = URL.createObjectURL(blob);
+  const ext = format === "pdf" ? "pdf" : "xlsx";
+  const filename = `plan-${planId}.${ext}`;
+  // Try anchor download (preserves filename); keep click in same microtask
   const link = document.createElement("a");
   link.href = url;
-  link.download = `plan-${planId}.${format === "pdf" ? "pdf" : "xlsx"}`;
+  link.download = filename;
+  link.style.display = "none";
   document.body.appendChild(link);
+  // Some browsers require click to be trusted; we are still within user-gesture async chain
   link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  // Fallback: if download attribute ignored, open in new tab
+  setTimeout(() => {
+    if (link.isConnected) link.remove();
+    // If file didn't download (e.g., popup blocker), offer blob URL
+    // No auto-open to avoid popup blocker; user sees file downloaded.
+  }, 100);
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
 export function planningError(reason: unknown) {

@@ -1,5 +1,5 @@
 import { minutesText } from "@/lib/dailyReports";
-import { persianDate } from "@/lib/planning";
+import { formatJalaliShort, persianDate } from "@/lib/planning";
 import type { ReportMetric, ReportResponse } from "@/lib/reports";
 
 export function reportValue(value: number, metric: ReportMetric) {
@@ -21,13 +21,13 @@ export function TrendChart({ report }: { report: ReportResponse }) {
   const label = report.metric === "tests" ? "روند تست" : report.metric === "plan" ? "روند اجرای برنامه" : "روند مطالعه واقعی";
   if (!report.trend.some((day) => day.value > 0)) return <section className="report-section"><h2>{label}</h2><p className="report-empty">برای این بازه هنوز عملکردی ثبت نشده است.</p></section>;
   return <section className="report-section"><h2>{label}</h2><div className="reports-chart" role="img" aria-label={`${label} با مقادیر عددی`}>
-    {report.trend.map((day) => <div className="reports-bar" key={day.date} title={`${persianDate(day.date)}: ${reportValue(day.value, report.metric)}`}><b>{reportValue(day.value, report.metric)}</b><span style={{ height: `${Math.max(day.value ? 7 : 2, day.value / max * 78)}%` }}/><small>{report.trend.length <= 7 ? persianDate(day.date).split("،")[0] : day.date.slice(8)}</small></div>)}
+    {report.trend.map((day) => <div className="reports-bar" key={day.date} title={`${persianDate(day.date)}: ${reportValue(day.value, report.metric)}`}><b>{reportValue(day.value, report.metric)}</b><span style={{ height: `${Math.max(day.value ? 7 : 2, day.value / max * 78)}%` }}/><small>{report.trend.length <= 7 ? persianDate(day.date).split("،")[0] : formatJalaliShort(day.date).split(" ")[0]}</small></div>)}
   </div></section>;
 }
 
 export function PlannedActualChart({ report }: { report: ReportResponse }) {
   const max = Math.max(1, ...report.days.flatMap((day) => [day.planned_minutes, day.actual_minutes]));
-  return <section className="report-section"><h2>برنامه مشاور در برابر عملکرد</h2><div className="planned-actual-chart">{report.days.map((day) => <div className="planned-actual-day" key={day.date}><strong>{report.days.length <= 7 ? persianDate(day.date).split("،")[0] : day.date.slice(8)}</strong><div><span className="planned-bar" style={{ width: `${day.planned_minutes / max * 100}%` }}/><small>برنامه {minutesText(day.planned_minutes)}</small></div><div><span className="actual-bar" style={{ width: `${day.actual_minutes / max * 100}%` }}/><small>عملکرد {minutesText(day.actual_minutes)}</small></div></div>)}</div></section>;
+  return <section className="report-section"><h2>برنامه مشاور در برابر عملکرد</h2><div className="planned-actual-chart">{report.days.map((day) => <div className="planned-actual-day" key={day.date}><strong>{report.days.length <= 7 ? persianDate(day.date).split("،")[0] : formatJalaliShort(day.date).split(" ")[0]}</strong><div><span className="planned-bar" style={{ width: `${day.planned_minutes / max * 100}%` }}/><small>برنامه {minutesText(day.planned_minutes)}</small></div><div><span className="actual-bar" style={{ width: `${day.actual_minutes / max * 100}%` }}/><small>عملکرد {minutesText(day.actual_minutes)}</small></div></div>)}</div></section>;
 }
 
 export function SubjectDistribution({ report }: { report: ReportResponse }) {
