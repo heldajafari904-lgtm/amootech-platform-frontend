@@ -1,2 +1,2 @@
-import ProfileManager from "../ProfileManager";
-export default function Counselors() { return <ProfileManager kind="counselors" />; }
+import CounselorsClient from "./CounselorsClient";
+export default function CounselorsPage(){ return <CounselorsClient />; }

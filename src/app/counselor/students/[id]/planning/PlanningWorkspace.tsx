@@ -7,12 +7,14 @@ import TimelineBoard from "./TimelineBoard";
 import { planningApi, type ItemInput } from "./planningApi";
 import { clampTime, itemDuration, minutesToTime, timeToMinutes } from "./plannerTime";
 import { apiErrorMessage } from "./planningFeedback";
+import FixedSchedulePanel from "./FixedSchedulePanel";
 import { PanelIcon, useDialogFocus } from "@/components/counselor/PanelUI";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, allPages } from "@/lib/api";
 import {
   addDaysISO,
   Commitment,
+  SchoolSlot,
   formatJalaliShort,
   persianDate,
   Plan,
@@ -212,6 +214,8 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
 
   const today = tehranTodayISO();
   const [commitments, setCommitments] = useState<Commitment[]>([]);
+  const [schoolSlots, setSchoolSlots] = useState<SchoolSlot[]>([]);
+  const [fixedOpen, setFixedOpen] = useState(false);
   const [copySource, setCopySource] = useState<PlanDay | null>(null);
   const [copyConfirm, setCopyConfirm] = useState<{target: PlanDay, mode: "append"|"replace"} | null>(null);
   const [copyBusy, setCopyBusy] = useState(false);
@@ -255,8 +259,9 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
         else if (!q.has("new") && own.length) setPlanId(own[0].id);
         // fetch academic tree once
         fetchAcademicTree(token, { student: String(s.id) }).then((t) => { if (live) setTree(t); }).catch(reason => { if (live) setError(apiErrorMessage(reason)); });
-        // fetch fixed commitments for timeline
-        allPages<Commitment>(`/planning/commitments/?student=${s.id}`, token).then((rows)=>{ if(live) setCommitments(rows.filter(c=>c.active)); }).catch(reason => { if (live) setError(apiErrorMessage(reason)); });
+        // fetch fixed commitments for timeline + school slots
+        allPages<Commitment>(`/planning/commitments/?student=${s.id}`, token).then((rows)=>{ if(live) setCommitments(rows); }).catch(reason => { if (live) setError(apiErrorMessage(reason)); });
+        allPages<SchoolSlot>(`/planning/school-slots/?student=${s.id}`, token).then((rows)=>{ if(live) setSchoolSlots(rows); }).catch(()=>{});
       })
       .catch((r) => { if (live) setError(apiErrorMessage(r)); })
       .finally(() => { if (live) setLoading(false); });
@@ -280,6 +285,14 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
       .catch((r) => { if (live) setError(apiErrorMessage(r)); });
     return () => { live = false; };
   }, [planId, token, setPlan]);
+
+  const refreshFixed = useCallback(async () => {
+    if (!student) return;
+    try {
+      const [c, s] = await Promise.all([allPages<Commitment>(`/planning/commitments/?student=${student.id}`, token), allPages<SchoolSlot>(`/planning/school-slots/?student=${student.id}`, token)]);
+      setCommitments(c); setSchoolSlots(s);
+    } catch {}
+  }, [student, token]);
 
   const creatingPlan = useRef(false);
   async function createPlan(e: React.FormEvent) {
@@ -459,6 +472,7 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
     return()=>{live=false;};
   },[plan, token]);
 
+  const activeCommitments = commitments.filter(c=>c.active);
   const days = plan ? sevenDayRange(plan.start_date) : [];
   if (loading) {
     return (
@@ -503,6 +517,10 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
           <div className="panel-row-actions"><button type="button" aria-pressed={chooseCopyMethod} onClick={() => setChooseCopyMethod(value => !value)}>{chooseCopyMethod ? "انتخاب روش کپی فعال است" : "انتخاب روش افزودن / جایگزینی"}</button><button type="button" className="ws-subtle" onClick={cancelCopy}>لغو کپی (Esc)</button></div>
         </div>
       )}
+      <section style={{ display: "grid", gap: 8 }}>
+        <button onClick={() => setFixedOpen(v => !v)} style={{ justifySelf: "start", border: "1px solid #e7e1ec", background: fixedOpen ? "#f6f1fb" : "white", color: fixedOpen ? "#5B0FAD" : "#16041E", borderRadius: 8, padding: "8px 14px", fontWeight: 700 }}>{fixedOpen ? "بستن برنامه‌های ثابت" : "مدیریت برنامه‌های ثابت (مدرسه و کلاس‌ها)"}</button>
+        {fixedOpen && <FixedSchedulePanel token={token} studentId={studentId} commitments={commitments} schoolSlots={schoolSlots} onRefresh={refreshFixed} />}
+      </section>
       {/* New plan modal (no longer always visible) */}
       {showNewPlan && (
         <div className="ws-modal" role="dialog" aria-modal="true" aria-label="برنامه جدید" onClick={()=> setShowNewPlan(false)}>
@@ -542,7 +560,7 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
             <button aria-pressed={!selectedDay} className={!selectedDay ? "is-active" : ""} onClick={() => setSelectedDay(null)}>همه روزها</button>
           </nav>
 
-          <TimelineBoard dates={days.filter(date => !selectedDay || date === selectedDay)} days={plan.days || []} commitments={commitments} pending={new Set([...actionKeys].filter(key => key.startsWith("item:")).map(key => Number(key.split(":")[1])))} copyDate={copySource?.date || null} copyBusy={copyBusy} onCopy={startCopy} onCopyTarget={(date,day) => { void handleCopyTargetClick(date,day); }} onAdd={date => { void addToDay(date); }} onDrop={transfer} onEdit={setEditingItem} onDelete={setDeleteTarget} onDuplicate={item => { void handleDuplicate(item); }} onMoveMenu={(item,date) => { setMoveItem(item); setMoveTarget(date); setMoveTime(item.start_time?.slice(0,5) || "06:00"); setMoveUnscheduled(!item.start_time); }}/>
+          <TimelineBoard dates={days.filter(date => !selectedDay || date === selectedDay)} days={plan.days || []} commitments={activeCommitments} pending={new Set([...actionKeys].filter(key => key.startsWith("item:")).map(key => Number(key.split(":")[1])))} copyDate={copySource?.date || null} copyBusy={copyBusy} onCopy={startCopy} onCopyTarget={(date,day) => { void handleCopyTargetClick(date,day); }} onAdd={date => { void addToDay(date); }} onDrop={transfer} onEdit={setEditingItem} onDelete={setDeleteTarget} onDuplicate={item => { void handleDuplicate(item); }} onMoveMenu={(item,date) => { setMoveItem(item); setMoveTarget(date); setMoveTime(item.start_time?.slice(0,5) || "06:00"); setMoveUnscheduled(!item.start_time); }}/>
 
         </>
       )}

@@ -1,0 +1,7 @@
+{
+  "checks": [
+    "counselor composer submits once, shows delivery result, clears successful message (mock send; no Telegram message sent)",
+    "admin composer submits once, shows delivery result, clears successful message (mock send; no Telegram message sent)",
+    "Admin navigation and student detail tabs exclude requested sections; all three direct routes return 404"
+  ]
+}

@@ -20,6 +20,17 @@ export type Commitment = {
   start_time: string;
   end_time: string;
   active: boolean;
+  group_id?: string | null;
+  valid_from?: string | null;
+  valid_until?: string | null;
+};
+
+export type SchoolSlot = {
+  id: number;
+  student: number;
+  weekday: number;
+  period: number;
+  subject_name: string;
 };
 
 export type Kind = "STUDY" | "TEST" | "REVIEW" | "EXAM" | "EVENT";
@@ -73,6 +84,15 @@ export const kindLabel: Record<Kind, string> = {
 export const commitmentLabel: Record<Commitment["kind"], string> = {
   SCHOOL: "\u0645\u062f\u0631\u0633\u0647", CLASS: "\u06a9\u0644\u0627\u0633", SPORTS: "\u0648\u0631\u0632\u0634", COMMUTE: "\u0631\u0641\u062a\u200c\u0648\u0622\u0645\u062f", OTHER: "\u0633\u0627\u06cc\u0631",
 };
+
+export const weekdayLabels: Record<number, string> = {
+  0: "دوشنبه", 1: "سه‌شنبه", 2: "چهارشنبه", 3: "پنج‌شنبه", 4: "جمعه", 5: "شنبه", 6: "یکشنبه",
+};
+export const weekdayShort: Record<number, string> = {
+  5: "شنبه", 6: "یکشنبه", 0: "دوشنبه", 1: "سه‌شنبه", 2: "چهارشنبه", 3: "پنج‌شنبه", 4: "جمعه",
+};
+export const WEEKDAY_ORDER = [5, 6, 0, 1, 2, 3, 4] as const; // Sat..Fri Persian week
+
 
 // ----- Central date/time utilities (Gregorian canonical, Jalali presentation, Tehran TZ) -----
 const TEHRAN_TZ = "Asia/Tehran";

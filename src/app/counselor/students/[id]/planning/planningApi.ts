@@ -1,5 +1,5 @@
 import { api } from "@/lib/api";
-import { downloadPlanExport, type Plan, type PlanDay, type PlanItem } from "@/lib/planning";
+import { downloadPlanExport, type Commitment, type Plan, type PlanDay, type PlanItem, type SchoolSlot } from "@/lib/planning";
 
 export type ItemInput = Pick<PlanItem, "plan_day" | "kind" | "ordering" | "title" | "planned_duration_minutes" | "start_time" | "end_time" | "note" | "subject" | "chapter" | "topic" | "test_count">;
 export type MoveInput = { target_day: number; ordering?: number; start_time?: string | null; end_time?: string | null; planned_duration_minutes?: number };
@@ -17,5 +17,24 @@ export function planningApi(token: string) {
     getPlan: (id: number) => api<Plan>(`/planning/plans/${id}/`, token),
     publish: (id: number) => api<Plan>(`/planning/plans/${id}/publish/`, token, "POST", {}),
     export: (id: number, format: "excel" | "pdf") => downloadPlanExport(id, format, token),
+    // Fixed schedule
+    listCommitments: (student: number) => api<Commitment[]>("/planning/commitments/?student=" + student, token, "GET").catch(async () => {
+      const { allPages } = await import("@/lib/api");
+      return allPages<Commitment>("/planning/commitments/?student=" + student, token);
+    }),
+    createCommitment: (data: { student: number; kind: string; title: string; weekday: number; start_time: string; end_time: string; valid_from?: string | null; valid_until?: string | null }) => api<Commitment>("/planning/commitments/", token, "POST", data),
+    updateCommitment: (id: number, data: Partial<{ title: string; kind: string; weekday: number; start_time: string; end_time: string; active: boolean; valid_from: string | null; valid_until: string | null }>) => api<Commitment>(`/planning/commitments/${id}/`, token, "PATCH", data),
+    deleteCommitment: (id: number) => api<void>(`/planning/commitments/${id}/`, token, "DELETE"),
+    toggleCommitment: (id: number) => api<Commitment>(`/planning/commitments/${id}/toggle-active/`, token, "POST", {}),
+    batchCommitment: (data: { student: number; kind: string; title: string; weekdays: number[]; start_time: string; end_time: string; valid_from?: string | null; valid_until?: string | null }) => api<Commitment[]>("/planning/commitments/batch/", token, "POST", data),
+    groupUpdate: (data: { group_id: string; title?: string; kind?: string; start_time?: string; end_time?: string; valid_from?: string | null; valid_until?: string | null; active?: boolean }) => api<Commitment[]>("/planning/commitments/group-update/", token, "POST", data),
+    groupDelete: (group_id: string) => api<void>("/planning/commitments/group-delete/", token, "POST", { group_id }),
+    schoolHours: (data: { student: number; weekdays: number[]; start_time: string; end_time: string; title?: string; valid_from?: string | null; valid_until?: string | null }) => api<Commitment[]>("/planning/commitments/school-hours/", token, "POST", data),
+    listSchoolSlots: (student: number) => api<SchoolSlot[]>("/planning/school-slots/?student=" + student, token, "GET").catch(async () => {
+      const { allPages } = await import("@/lib/api");
+      return allPages<SchoolSlot>("/planning/school-slots/?student=" + student, token);
+    }),
+    bulkSchoolSlots: (data: { student: number; slots: { weekday: number; period: number; subject_name: string }[] }) => api<SchoolSlot[]>("/planning/school-slots/bulk/", token, "POST", data),
+    clearSchoolSlots: (student: number, weekday?: number) => api<void>("/planning/school-slots/clear/?student=" + student + (weekday !== undefined ? "&weekday=" + weekday : ""), token, "DELETE"),
   };
 }
