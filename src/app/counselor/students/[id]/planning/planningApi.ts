@@ -13,9 +13,10 @@ export function planningApi(token: string) {
     copyDay: (id: number, target: number, mode: "append" | "replace" = "append") => api<PlanDay>(`/planning/days/${id}/copy-day/`, token, "POST", { target_day: target, mode }),
     reorderItems: (id: number, ordering: number[]) => api<PlanDay>(`/planning/days/${id}/reorder/`, token, "POST", { ordering }),
     createDay: (plan: number, date: string) => api<PlanDay>("/planning/days/", token, "POST", { plan, date }),
-    createPlan: (data: { student: number; start_date: string; end_date: string; title: string }) => api<Plan>("/planning/plans/", token, "POST", data),
+    createPlan: (data: { student: number; start_date: string; end_date: string; title: string; apply_fixed?: boolean; exam_dates?: string[] }) => api<Plan>("/planning/plans/", token, "POST", data),
     getPlan: (id: number) => api<Plan>(`/planning/plans/${id}/`, token),
     publish: (id: number) => api<Plan>(`/planning/plans/${id}/publish/`, token, "POST", {}),
+    applyFixed: (id: number) => api<{ plan: Plan; created: number; removed: number; skipped: { date: string; title: string; start: string; end: string; reason: string }[] }>(`/planning/plans/${id}/apply-fixed/`, token, "POST", {}),
     export: (id: number, format: "excel" | "pdf") => downloadPlanExport(id, format, token),
     // Fixed schedule
     listCommitments: (student: number) => api<Commitment[]>("/planning/commitments/?student=" + student, token, "GET").catch(async () => {

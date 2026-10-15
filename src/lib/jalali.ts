@@ -52,9 +52,20 @@ export function jalaliMonthLength(jy: number, jm: number): number {
 }
 export const JALALI_MONTHS = ["فروردین","اردیبهشت","خرداد","تیر","مرداد","شهریور","مهر","آبان","آذر","دی","بهمن","اسفند"];
 export function formatJalaliShort(jy: number, jm: number, jd: number): string { return `${jd} ${JALALI_MONTHS[jm-1]} ${jy}`; }
+export function formatJalaliLong(jy: number, jm: number, jd: number): string { return `${jd} ${JALALI_MONTHS[jm-1]} ${jy}`; }
 
 // For display: ISO string -> jalali parts
 export function parseISO(iso: string): { y:number; m:number; d:number } {
   const [y,m,d] = iso.split("-").map(Number);
   return { y,m,d };
 }
+export function toJalaliParts(iso: string): { jy:number; jm:number; jd:number } {
+  const { y,m,d } = parseISO(iso);
+  const j = gregorianToJalali(y,m,d);
+  return { jy: j.jy, jm: j.jm, jd: j.jd };
+}
+export function toJalaliString(iso: string): string {
+  const { jy, jm, jd } = toJalaliParts(iso);
+  return `${String(jy).padStart(4,"0")}/${String(jm).padStart(2,"0")}/${String(jd).padStart(2,"0")}`;
+}
+export function formatJalaliParts(jy:number,jm:number,jd:number): string { return `${jd} ${JALALI_MONTHS[jm-1]} ${jy}`; }

@@ -29,17 +29,21 @@ export default function PlanActivityCard({
   placement?: string;
   pending?: boolean;
 }) {
-  const kindClass = `ws-box ws-box-${item.kind.toLowerCase()}`;
+  const isFixed = item.kind === "EVENT" && (item.note === "مدرسه" || item.note === "برنامه ثابت");
+  const variant = isFixed ? (item.note === "مدرسه" ? "fixed-school" : "fixed") : item.kind.toLowerCase();
+  const kindClass = `ws-box ws-box-${variant}`;
   const title = item.title || item.subject_name || "—";
   const sub = (item.chapter_name || item.topic_name) ? [item.chapter_name, item.topic_name].filter(Boolean).join(" › ") : (item.subject_name && item.title ? item.subject_name : "");
   const note = (item.note || "").trim();
   const isLongNote = note.length > NOTE_COLLAPSE_CHARS;
   const [expanded, setExpanded] = useState(false);
+  const isSchoolBox = variant === "fixed-school";
+  const isFixedBox = variant === "fixed";
   return (
-    <article className={kindClass} data-item-id={item.id} aria-busy={pending}>
+    <article className={kindClass} data-item-id={item.id} aria-busy={pending} data-fixed={isFixed ? "1" : undefined} data-fixed-kind={isFixed ? (isSchoolBox ? "school" : "fixed") : undefined}>
       <button type="button" className="timeline-delete ws-danger" aria-label={`حذف ${title}`} disabled={pending || !item.counselor_editable} onClick={onDelete}><PanelIcon name="close"/></button>
       <div className="ws-box-head">{dragHandle}
-        <span className="ws-box-kind">{item.kind === "STUDY" ? "مطالعه" : item.kind === "TEST" ? "تست" : item.kind === "REVIEW" ? "مرور" : item.kind === "EXAM" ? "آزمون" : "رویداد"}</span>
+        <span className="ws-box-kind">{isSchoolBox ? "مدرسه" : isFixedBox ? "برنامه ثابت" : item.kind === "STUDY" ? "مطالعه" : item.kind === "TEST" ? "تست" : item.kind === "REVIEW" ? "مرور" : item.kind === "EXAM" ? "آزمون" : "رویداد"}</span>
         {item.start_time && item.end_time && <span className="ws-box-time">{toFaDigits(item.start_time.slice(0,5))}–{toFaDigits(item.end_time.slice(0,5))}</span>}
       </div>
       {placement && <span className="timeline-placement" title={placement}>{placement}</span>}

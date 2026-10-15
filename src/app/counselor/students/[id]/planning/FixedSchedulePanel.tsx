@@ -1,325 +1,356 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { commitmentLabel, type Commitment, type SchoolSlot, WEEKDAY_ORDER } from "@/lib/planning";
 import { planningApi } from "./planningApi";
 import { apiErrorMessage } from "./planningFeedback";
+import { IconButton } from "@/components/counselor/PanelUI";
 
 const WEEKDAY_LABEL: Record<number, string> = { 5: "شنبه", 6: "یکشنبه", 0: "دوشنبه", 1: "سه‌شنبه", 2: "چهارشنبه", 3: "پنج‌شنبه", 4: "جمعه" };
 const KIND_OPTIONS: { value: Commitment["kind"]; label: string }[] = [
   { value: "CLASS", label: "کلاس" },
-  { value: "SPORTS", label: "ورزش / باشگاه" },
+  { value: "SPORTS", label: "باشگاه" },
   { value: "COMMUTE", label: "رفت‌وآمد" },
   { value: "OTHER", label: "سایر" },
 ];
 
-function WeekdayPicker({ value, onChange }: { value: number[]; onChange: (v: number[]) => void }) {
-  return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-      {WEEKDAY_ORDER.map((wd) => {
-        const active = value.includes(wd);
-        return (
-          <button key={wd} type="button" onClick={() => onChange(active ? value.filter((x) => x !== wd) : [...value, wd].sort((a, b) => WEEKDAY_ORDER.indexOf(a as never) - WEEKDAY_ORDER.indexOf(b as never)))} style={{ padding: "6px 10px", borderRadius: 8, border: active ? "1px solid #5B0FAD" : "1px solid #e7e1ec", background: active ? "#f6f1fb" : "white", color: active ? "#5B0FAD" : "#16041E", fontWeight: active ? 700 : 400 }}>
-            {WEEKDAY_LABEL[wd]}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
+function timeToMins(t: string) { const [h,m]=t.split(":").map(Number); return h*60+m; }
+function minsToTime(m: number){ const total = ((m % (24*60)) + 24*60) % (24*60); return `${String(Math.floor(total/60)).padStart(2,"0")}:${String(total%60).padStart(2,"0")}`; }
+function durationLabel(mins:number){ if(mins===90) return "۹۰ دقیقه"; if(mins===45) return "۴۵ دقیقه"; return `${mins} دقیقه`; }
+
+type FixedEvent = { id: number; student: number; title: string; date: string; start_time: string; end_time: string; active: boolean };
+const DAY_TABS = WEEKDAY_ORDER as unknown as number[];
 
 export default function FixedSchedulePanel({ token, studentId, commitments, schoolSlots, onRefresh }: { token: string; studentId: string; commitments: Commitment[]; schoolSlots: SchoolSlot[]; onRefresh: () => void }) {
-  const [tab, setTab] = useState<"school" | "other">("school");
   const client = useMemo(() => planningApi(token), [token]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const sid = Number(studentId);
+  const [section, setSection] = useState<"school"|"events">("school");
 
-  // School hours form
-  const schoolCommitments = commitments.filter((c) => c.kind === "SCHOOL");
-  const otherCommitments = commitments.filter((c) => c.kind !== "SCHOOL");
-  const [schoolWeekdays, setSchoolWeekdays] = useState<number[]>(() => [...new Set(schoolCommitments.filter((c) => c.active).map((c) => c.weekday))].sort((a, b) => WEEKDAY_ORDER.indexOf(a as never) - WEEKDAY_ORDER.indexOf(b as never)));
-  const [schoolStart, setSchoolStart] = useState("07:30");
-  const [schoolEnd, setSchoolEnd] = useState("13:30");
-  const [schoolValidFrom, setSchoolValidFrom] = useState("");
-  const [schoolValidUntil, setSchoolValidUntil] = useState("");
-  const [schoolBusy, setSchoolBusy] = useState(false);
+  const schoolCommits = commitments.filter(c=>c.kind==="SCHOOL");
+  const otherCommits = commitments.filter(c=>c.kind!=="SCHOOL");
 
-  // Per-day override editing for school
-  const [editSchoolId, setEditSchoolId] = useState<number | null>(null);
-  const [editSchoolStart, setEditSchoolStart] = useState("");
-  const [editSchoolEnd, setEditSchoolEnd] = useState("");
+  // Which days are school days (has SCHOOL commitment)
+  const schoolDays = useMemo(()=> new Set(schoolCommits.filter(c=>c.active).map(c=>c.weekday)), [schoolCommits]);
+  const [activeDay, setActiveDay] = useState<number>(5);
+  const [periodPreset, setPeriodPreset] = useState<"45"|"90"|"custom">("90");
+  const [breakMins, setBreakMins] = useState<number>(10);
+  const [slotsDraft, setSlotsDraft] = useState<{period:number; subject_name:string; start_time:string; end_time:string}[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [copySource, setCopySource] = useState<number|null>(null);
+  const [copyTargets, setCopyTargets] = useState<number[]>([]);
+  const [events, setEvents] = useState<FixedEvent[]>([]);
+  const [resyncNote, setResyncNote] = useState<string>("");
+  const [evDay, setEvDay] = useState<number>(5);
+  const [evTitle, setEvTitle] = useState("");
+  const [evStart, setEvStart] = useState("17:00");
+  const [evEnd, setEvEnd] = useState("18:30");
 
-  // Other activity form
+  // other recurring
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState<Commitment["kind"]>("CLASS");
   const [weekdays, setWeekdays] = useState<number[]>([]);
   const [start, setStart] = useState("18:00");
   const [end, setEnd] = useState("20:00");
-  const [validFrom, setValidFrom] = useState("");
-  const [validUntil, setValidUntil] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [editing, setEditing] = useState<Commitment | null>(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [editKind, setEditKind] = useState<Commitment["kind"]>("CLASS");
-  const [editStart, setEditStart] = useState("");
-  const [editEnd, setEditEnd] = useState("");
 
-  // School slots (periods)
-  const [slotWeekday, setSlotWeekday] = useState<number>(5);
-  const [slotPeriods, setSlotPeriods] = useState<{ period: number; subject_name: string }[]>(() => Array.from({ length: 4 }, (_, i) => ({ period: i + 1, subject_name: "" })));
-  const [slotsBusy, setSlotsBusy] = useState(false);
+  function notify(msg:string){ setNotice(msg); setTimeout(()=>setNotice(""),2500); }
 
-  function notify(msg: string) {
-    setNotice(msg);
-    setTimeout(() => setNotice(""), 2500);
+  useEffect(()=>{
+    const normalize = (v: unknown): FixedEvent[] => {
+      if (Array.isArray(v)) return v as FixedEvent[];
+      if (v && typeof v === "object" && "results" in (v as Record<string, unknown>)) return ((v as Record<string, unknown>).results as FixedEvent[]) ?? [];
+      return [];
+    };
+    api<FixedEvent[] | {results: FixedEvent[]}>(`/planning/fixed-events/?student=${sid}`, token).catch(async()=>{ const{allPages}=await import("@/lib/api"); return allPages<FixedEvent>(`/planning/fixed-events/?student=${sid}`, token);}).then(v=> setEvents(normalize(v))).catch(()=> setEvents([]));
+  },[sid, token, commitments]);
+
+  // infer preset from loaded slots when switching day (detect 45 vs 90 vs custom)
+  function inferPreset(slots: {start_time?: string | null; end_time?: string | null}[]): "45"|"90"|"custom" {
+    if(!slots.length) return "90";
+    const diffs = slots.filter(s=> s.start_time && s.end_time).map(s=> timeToMins(s.end_time!.slice(0,5)) - timeToMins(s.start_time!.slice(0,5)));
+    if(!diffs.length) return "90";
+    const all45 = diffs.every(d=> d===45);
+    const all90 = diffs.every(d=> d===90);
+    if(all45) return "45";
+    if(all90) return "90";
+    return "custom";
   }
 
-  async function submitSchool() {
-    if (!schoolWeekdays.length) { setError("حداقل یک روز را انتخاب کنید."); return; }
-    setSchoolBusy(true); setError("");
-    try {
-      await client.schoolHours({ student: sid, weekdays: schoolWeekdays, start_time: schoolStart, end_time: schoolEnd, title: "مدرسه", valid_from: schoolValidFrom || null, valid_until: schoolValidUntil || null });
-      notify("برنامه مدرسه ذخیره شد.");
-      onRefresh();
-    } catch (e) { setError(apiErrorMessage(e)); } finally { setSchoolBusy(false); }
-  }
-
-  async function saveSchoolEdit(c: Commitment) {
-    setError("");
-    try {
-      await client.updateCommitment(c.id, { start_time: editSchoolStart, end_time: editSchoolEnd });
-      setEditSchoolId(null); notify("ساعت مدرسه ویرایش شد."); onRefresh();
-    } catch (e) { setError(apiErrorMessage(e)); }
-  }
-
-  async function submitOther() {
-    if (!title.trim()) { setError("عنوان را وارد کنید."); return; }
-    if (!weekdays.length) { setError("حداقل یک روز انتخاب کنید."); return; }
-    setBusy(true); setError("");
-    try {
-      if (weekdays.length === 1) {
-        await client.createCommitment({ student: sid, kind, title: title.trim(), weekday: weekdays[0], start_time: start, end_time: end, valid_from: validFrom || null, valid_until: validUntil || null });
-      } else {
-        await client.batchCommitment({ student: sid, kind, title: title.trim(), weekdays, start_time: start, end_time: end, valid_from: validFrom || null, valid_until: validUntil || null });
+  // Load slots for activeDay - sequential
+  useEffect(()=>{
+    const slots = schoolSlots.filter(s=>s.weekday===activeDay).sort((a,b)=>a.period-b.period);
+    if(slots.length){
+      const preset = inferPreset(slots);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPeriodPreset(preset);
+      if(preset !== "custom"){
+        // infer break from gap between first two
+        if(slots.length>=2 && slots[0].end_time && slots[1].start_time){
+          const gap = timeToMins(slots[1].start_time.slice(0,5)) - timeToMins(slots[0].end_time.slice(0,5));
+          if(gap>=5 && gap<=20) setBreakMins(gap);
+        }
       }
-      setTitle(""); setWeekdays([]); notify("فعالیت ثابت ثبت شد."); onRefresh();
-    } catch (e) { setError(apiErrorMessage(e)); } finally { setBusy(false); }
-  }
-
-  async function saveEdit() {
-    if (!editing) return;
-    setError("");
-    try {
-      if (editing.group_id) {
-        await client.groupUpdate({ group_id: editing.group_id, title: editTitle.trim(), kind: editKind, start_time: editStart, end_time: editEnd });
-      } else {
-        await client.updateCommitment(editing.id, { title: editTitle.trim(), kind: editKind, start_time: editStart, end_time: editEnd });
-      }
-      setEditing(null); notify("ویرایش ذخیره شد."); onRefresh();
-    } catch (e) { setError(apiErrorMessage(e)); }
-  }
-
-  async function removeCommitment(c: Commitment) {
-    if (!confirm(`«${c.title}» حذف شود؟`)) return;
-    setError("");
-    try {
-      if (c.group_id) await client.groupDelete(c.group_id);
-      else await client.deleteCommitment(c.id);
-      notify("حذف شد."); onRefresh();
-    } catch (e) { setError(apiErrorMessage(e)); }
-  }
-
-  async function toggleActive(c: Commitment) {
-    setError("");
-    try {
-      if (c.group_id) await client.groupUpdate({ group_id: c.group_id, active: !c.active });
-      else await client.toggleCommitment(c.id);
-      onRefresh();
-    } catch (e) { setError(apiErrorMessage(e)); }
-  }
-
-  async function saveSlots() {
-    const filled = slotPeriods.filter((s) => s.subject_name.trim()).map((s) => ({ weekday: slotWeekday, period: s.period, subject_name: s.subject_name.trim() }));
-    // We upsert only filled; but to allow clearing, we delete existing for that weekday then bulk
-    setSlotsBusy(true); setError("");
-    try {
-      // Clear existing for this weekday then re-create
-      const toDelete = schoolSlots.filter((s) => s.weekday === slotWeekday);
-      // Instead of clear+bulk, we use bulk which upserts; we need to delete removed ones
-      const keepPeriods = new Set(filled.map((f) => f.period));
-      for (const s of toDelete) if (!keepPeriods.has(s.period)) await api<void>(`/planning/school-slots/${s.id}/`, token, "DELETE");
-      if (filled.length) await client.bulkSchoolSlots({ student: sid, slots: filled });
-      notify("جدول درس‌ها ذخیره شد."); onRefresh();
-    } catch (e) { setError(apiErrorMessage(e)); } finally { setSlotsBusy(false); }
-  }
-
-  const grouped = useMemo(() => {
-    const map = new Map<string, Commitment[]>();
-    for (const c of otherCommitments) {
-      const key = c.group_id || `single:${c.id}`;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(c);
+      setSlotsDraft(slots.map(s=>({period:s.period, subject_name:s.subject_name, start_time: s.start_time?.slice(0,5)||"07:30", end_time: (s.end_time as string|null)?.slice(0,5) || minsToTime(timeToMins(s.start_time?.slice(0,5)||"07:30")+(preset==="90"?90:45))})));
+    } else {
+       
+      // new day empty -> default 90 min first period
+      setSlotsDraft([{period:1, subject_name:"", start_time:"07:30", end_time:"09:00"}]);
     }
-    return [...map.values()].sort((a, b) => WEEKDAY_ORDER.indexOf(a[0].weekday as never) - WEEKDAY_ORDER.indexOf(b[0].weekday as never));
-  }, [otherCommitments]);
+  },[activeDay, schoolSlots]);
+
+  const isSchool = schoolDays.has(activeDay);
+  const schoolCommitForDay = schoolCommits.find(c=>c.weekday===activeDay);
+
+  async function toggleSchoolDay(day:number){
+    const has = schoolDays.has(day);
+    try{
+      if(has){
+        const c = schoolCommits.find(x=>x.weekday===day);
+        if(!c) return;
+        if(!confirm(`${WEEKDAY_LABEL[day]} از روزهای مدرسه حذف شود؟ (زنگ‌ها نیز حذف می‌شوند)`)) return;
+        // optimistic: clear locally so plan feels instant; then sync
+        const prevSlots = [...schoolSlots];
+        const prevCommits = [...commitments];
+        // immediate local prune for snappy UI (will be corrected by refresh)
+        // do delete on server
+        await api<void>(`/planning/commitments/${c.id}/`, token, "DELETE");
+        const slotsToClear = prevSlots.filter(x=>x.weekday===day);
+        for(const s of slotsToClear) await api<void>(`/planning/school-slots/${s.id}/`, token, "DELETE").catch(()=>{});
+        setSlotsDraft([{period:1, subject_name:"", start_time:"07:30", end_time:"09:00"}]);
+        await onRefresh();
+        // also sync open DRAFT plan: remove مدرسه boxes for that weekday that are still deletable
+        try {
+          const { allPages } = await import("@/lib/api");
+          const plans = await allPages<{id:number; status:string}>(`/planning/plans/?student=${sid}`, token);
+          const draft = plans.find(p=> p.status==="DRAFT");
+          if(draft){
+            const r = await api<{plan: unknown; created:number; removed:number}>(`/planning/plans/${draft.id}/apply-fixed/`, token, "POST", {});
+            try { window.dispatchEvent(new CustomEvent("plan:fixed-resynced", { detail: { planId: draft.id, created: r.created, removed: r.removed }})); } catch {}
+            notify(r.removed ? `این روز از مدرسه حذف و ${r.removed} باکس از برنامه پاک شد.` : "روز از مدرسه حذف شد.");
+          } else {
+            notify("روز از مدرسه حذف شد.");
+          }
+        } catch {}
+      } else {
+        await client.schoolHours({student:sid, weekdays:[day], start_time:"07:30", end_time:"13:30", title:"مدرسه"});
+        await onRefresh();
+      }
+    }catch(e){ setError(apiErrorMessage(e)); }
+  }
+function applySequential(list:{period:number; subject_name:string; start_time:string; end_time:string}[], dur:number, gap:number){
+    let cur = timeToMins("07:30");
+    return list.map((z, i)=>{
+      const s = i===0 ? "07:30" : minsToTime(cur+gap);
+      const e = minsToTime(timeToMins(s)+dur);
+      cur = timeToMins(e);
+      return {...z, start_time: s, end_time: e, period: i+1};
+    });
+  }
+
+  function addZang(){
+    if(periodPreset==="custom"){
+      const last = slotsDraft[slotsDraft.length-1];
+      let nextStart = "07:30";
+      if(last?.end_time) nextStart = minsToTime(timeToMins(last.end_time)+10);
+      else if(last?.start_time) nextStart = minsToTime(timeToMins(last.start_time)+60);
+      const nextEnd = minsToTime(timeToMins(nextStart)+45);
+      setSlotsDraft([...slotsDraft, {period: slotsDraft.length+1, subject_name:"", start_time: nextStart, end_time: nextEnd}]);
+    } else {
+      const dur = periodPreset==="90" ? 90 : 45;
+      const gap = breakMins;
+      const next = applySequential([...slotsDraft, {period: slotsDraft.length+1, subject_name:"", start_time:"", end_time:""}], dur, gap);
+      setSlotsDraft(next);
+    }
+  }
+
+  function handlePresetChange(next: "45"|"90"|"custom"){
+    setPeriodPreset(next);
+    if(next!=="custom"){
+      const dur = next==="90" ? 90 : 45;
+      setSlotsDraft(cur => applySequential(cur, dur, breakMins));
+    }
+  }
+  function handleBreakChange(gap:number){
+    setBreakMins(gap);
+    if(periodPreset!=="custom"){
+      const dur = periodPreset==="90" ? 90 : 45;
+      setSlotsDraft(cur => applySequential(cur, dur, gap));
+    }
+  }
+
+  async function saveSlots(){
+    if(!isSchool){ setError("ابتدا این روز را به روزهای مدرسه اضافه کنید."); return; }
+    const filled = slotsDraft.filter(z=> z.subject_name.trim()).map(z=>({weekday:activeDay, period:z.period, subject_name:z.subject_name.trim(), start_time: z.start_time, end_time: z.end_time}));
+    if(!filled.length){ setError("حداقل یک زنگ با نام درس پر کنید."); return; }
+    // basic time validation for custom
+    for(const f of filled){
+      if(!f.start_time || !f.end_time){ setError("ساعت شروع و پایان هر زنگ را وارد کنید."); return; }
+      if(timeToMins(f.end_time) <= timeToMins(f.start_time)){ setError(`ساعت پایان «${f.subject_name}» باید بعد از شروع باشد.`); return; }
+    }
+    setSaving(true); setError("");
+    try{
+      const toDelete = schoolSlots.filter(s=>s.weekday===activeDay);
+      const keep = new Set(filled.map(f=>f.period));
+      for(const s of toDelete) if(!keep.has(s.period)) await api<void>(`/planning/school-slots/${s.id}/`, token, "DELETE");
+      await client.bulkSchoolSlots({student:sid, slots: filled as never});
+      notify("زنگ‌ها ذخیره شد."); await onRefresh();
+      // in-the-moment sync: if a plan is open for this student, resync its fixed boxes so school change appears live
+      setResyncNote("");
+      try {
+        const { allPages } = await import("@/lib/api");
+        const plans = await allPages<{id:number; status:string}>(`/planning/plans/?student=${sid}`, token);
+        const draft = plans.find(p=> p.status==="DRAFT");
+        if(draft){
+          const r = await api<{plan: unknown; created:number; removed:number; skipped:{date:string;title:string;reason:string}[]}>(`/planning/plans/${draft.id}/apply-fixed/`, token, "POST", {});
+          const conflicts = r.skipped.filter(s=> s.reason==="conflict");
+          setResyncNote(conflicts.length ? `زنگ‌ها در برنامه اعمال شد — ${conflicts.length} مورد به‌دلیل تداخل اضافه نشد.` : r.created || r.removed ? "برنامه با زنگ‌های جدید همگام شد." : "");
+          await onRefresh();
+          // soft notify parent to refresh plan detail if it watches studentId change - emit via onRefresh already; parent will pick up on next plan refresh if needed
+          // also dispatch a lightweight event for workspace to react if mounted
+          try { window.dispatchEvent(new CustomEvent("plan:fixed-resynced", { detail: { planId: draft.id, created: r.created }})); } catch {}
+        }
+      } catch {}
+    }catch(e){ setError(apiErrorMessage(e)); } finally{ setSaving(false); }
+  }
+
+  async function doCopy(){
+    if(copySource===null||!copyTargets.length) return;
+    try{
+      await api(`/planning/commitments/copy-school-day/`, token, "POST", {student:sid, source_weekday: copySource, target_weekdays: copyTargets});
+      notify("کپی انجام شد."); setCopySource(null); setCopyTargets([]); await onRefresh();
+    }catch(e){
+      const msg = apiErrorMessage(e);
+      if(msg.includes("تأیید")|| (e as Error).message.includes("NEEDS_CONFIRM")){
+        if(confirm("مقصد برنامه دارد — جایگزین شود؟")){ try{ await api(`/planning/commitments/copy-school-day/`, token, "POST", {student:sid, source_weekday: copySource, target_weekdays: copyTargets, force:true}); notify("کپی شد."); setCopySource(null); setCopyTargets([]); await onRefresh(); }catch(e2){ setError(apiErrorMessage(e2)); }}
+      } else setError(msg);
+    }
+  }
+
+  async function submitEvent(){
+    if(!evTitle.trim()){ setError("عنوان رویداد را وارد کنید."); return; }
+    // map evDay to a date: use next occurrence of that weekday for recurring-like? Instead use picker hidden: we store as weekday-based? For dated events, spec says date-based but UI is day tabs; we pick next occurrence within current week window.
+    // Simplify: create a dated event for next occurrence of evDay
+    const today = new Date();
+    const target = new Date(today);
+    const diff = (evDay - target.getDay() + 7) % 7;
+    target.setDate(today.getDate()+diff);
+    const iso = `${target.getFullYear()}-${String(target.getMonth()+1).padStart(2,"0")}-${String(target.getDate()).padStart(2,"0")}`;
+    try{ await api(`/planning/fixed-events/`, token, "POST", {student:sid, title:evTitle.trim(), date: iso, start_time: evStart, end_time: evEnd}); setEvTitle(""); notify("رویداد ثبت شد."); const raw= await api<FixedEvent[] | {results: FixedEvent[]}>(`/planning/fixed-events/?student=${sid}`, token).catch(async()=>{ const{allPages}=await import("@/lib/api"); return allPages<FixedEvent>(`/planning/fixed-events/?student=${sid}`, token);}); const r = Array.isArray(raw) ? raw : (raw as {results: FixedEvent[]}).results ?? []; setEvents(r); await onRefresh(); }catch(e){ setError(apiErrorMessage(e)); }
+  }
+
+  async function submitRecurring(){
+    if(!title.trim()||!weekdays.length){ setError("عنوان و روزها الزامی است."); return; }
+    try{
+      if(weekdays.length===1) await client.createCommitment({student:sid, kind, title:title.trim(), weekday:weekdays[0], start_time:start, end_time:end});
+      else await client.batchCommitment({student:sid, kind, title:title.trim(), weekdays, start_time:start, end_time:end});
+      setTitle(""); setWeekdays([]); notify("فعالیت ثابت ثبت شد."); await onRefresh();
+    }catch(e){ setError(apiErrorMessage(e)); }
+  }
+
+  const grouped = useMemo(()=>{
+    const m=new Map<string, Commitment[]>();
+    for(const c of otherCommits){ const k=c.group_id||`s:${c.id}`; if(!m.has(k)) m.set(k,[]); m.get(k)!.push(c); }
+    return [...m.values()];
+  },[otherCommits]);
+  const dayEvents = (Array.isArray(events) ? events : []).filter(e=> new Date(e.date).getDay()===activeDay);
 
   return (
-    <section style={{ background: "white", border: "1px solid #e7e1ec", borderRadius: 12, padding: 16, display: "grid", gap: 16 }} dir="rtl">
-      <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
-        <h2 style={{ fontSize: 16, fontWeight: 700 }}>برنامه‌های ثابت</h2>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => setTab("school")} style={{ padding: "6px 14px", borderRadius: 8, border: tab === "school" ? "1px solid #5B0FAD" : "1px solid #e7e1ec", background: tab === "school" ? "#f6f1fb" : "white", color: tab === "school" ? "#5B0FAD" : "#16041E", fontWeight: tab === "school" ? 700 : 400 }}>برنامه مدرسه</button>
-          <button onClick={() => setTab("other")} style={{ padding: "6px 14px", borderRadius: 8, border: tab === "other" ? "1px solid #5B0FAD" : "1px solid #e7e1ec", background: tab === "other" ? "#f6f1fb" : "white", color: tab === "other" ? "#5B0FAD" : "#16041E", fontWeight: tab === "other" ? 700 : 400 }}>کلاس‌ها و فعالیت‌ها</button>
-        </div>
+    <section style={{background:"white", border:"1px solid #e7e1ec", borderRadius:12, padding:12, display:"grid", gap:12}} dir="rtl">
+      <div style={{display:"flex", gap:8, alignItems:"center"}}>
+        <button onClick={()=>setSection("school")} style={{padding:"6px 12px", borderRadius:8, border: section==="school"?"1px solid #5B0FAD":"1px solid #e7e1ec", background: section==="school"?"#f6f1fb":"white", color: section==="school"?"#5B0FAD":"#16041E"}}>برنامه مدرسه</button>
+        <button onClick={()=>setSection("events")} style={{padding:"6px 12px", borderRadius:8, border: section==="events"?"1px solid #5B0FAD":"1px solid #e7e1ec", background: section==="events"?"#f6f1fb":"white", color: section==="events"?"#5B0FAD":"#16041E"}}>رویدادها و فعالیت‌ها</button>
       </div>
-      {error && <p style={{ color: "#a12626", background: "#fef2f2", border: "1px solid #fecaca", padding: "8px 12px", borderRadius: 8 }} role="alert">{error}</p>}
-      {notice && <p style={{ color: "#065f46", background: "#ecfdf5", border: "1px solid #a7f3d0", padding: "8px 12px", borderRadius: 8 }}>{notice}</p>}
+      {error && <p style={{color:"#a12626", background:"#fef2f2", border:"1px solid #fecaca", padding:"6px 10px", borderRadius:8, fontSize:12}} role="alert">{error}</p>}
+      {notice && <p style={{color:"#065f46", background:"#ecfdf5", border:"1px solid #a7f3d0", padding:"6px 10px", borderRadius:8, fontSize:12}}>{notice}</p>}
+      {resyncNote && <p style={{color:"#664400", background:"#fffbeb", border:"1px solid #fde68a", padding:"6px 10px", borderRadius:8, fontSize:11}} role="status">{resyncNote}</p>}
 
-      {tab === "school" ? (
-        <div style={{ display: "grid", gap: 16 }}>
-          <div style={{ display: "grid", gap: 8, background: "#faf9fc", border: "1px solid #e7e1ec", borderRadius: 10, padding: 12 }}>
-            <strong style={{ fontSize: 13 }}>ساعات مدرسه</strong>
-            <p style={{ fontSize: 12, color: "#706578" }}>روزهای حضور و ساعت مدرسه را انتخاب کنید. با یک عملیات برای چند روز ذخیره می‌شود. در صورت نیاز ساعت هر روز را جداگانه ویرایش کنید.</p>
-            <label style={{ display: "grid", gap: 6, fontSize: 13 }}>روزهای مدرسه
-              <WeekdayPicker value={schoolWeekdays} onChange={setSchoolWeekdays} />
-            </label>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <label style={{ display: "grid", gap: 4, fontSize: 12 }}>شروع<input type="time" value={schoolStart} onChange={(e) => setSchoolStart(e.target.value)} /></label>
-              <label style={{ display: "grid", gap: 4, fontSize: 12 }}>پایان<input type="time" value={schoolEnd} onChange={(e) => setSchoolEnd(e.target.value)} /></label>
-              <label style={{ display: "grid", gap: 4, fontSize: 12 }}>از تاریخ<input type="date" value={schoolValidFrom} onChange={(e) => setSchoolValidFrom(e.target.value)} /></label>
-              <label style={{ display: "grid", gap: 4, fontSize: 12 }}>تا تاریخ<input type="date" value={schoolValidUntil} onChange={(e) => setSchoolValidUntil(e.target.value)} /></label>
-            </div>
-            <button onClick={submitSchool} disabled={schoolBusy} style={{ justifySelf: "start", background: "#5B0FAD", color: "white", border: "1px solid #5B0FAD", borderRadius: 8, padding: "8px 16px" }}>{schoolBusy ? "در حال ذخیره…" : "ذخیره ساعات مدرسه"}</button>
+      {section==="school" ? (
+        <>
+          {/* Day tabs */}
+          <div style={{display:"flex", gap:6, overflowX:"auto", paddingBottom:4}}>
+            {DAY_TABS.map(wd=>(
+              <button key={wd} onClick={()=>setActiveDay(wd)} style={{padding:"6px 10px", borderRadius:8, border: activeDay===wd?"1px solid #5B0FAD":"1px solid #e7e1ec", background: activeDay===wd?"#5B0FAD":"white", color: activeDay===wd?"white":"#16041E", fontSize:12, whiteSpace:"nowrap", opacity: schoolDays.has(wd)?1:0.7}}>
+                {WEEKDAY_LABEL[wd]} {schoolDays.has(wd)?"· مدرسه":""}
+              </button>
+            ))}
           </div>
 
-          <div style={{ display: "grid", gap: 8 }}>
-            <strong style={{ fontSize: 13 }}>ساعات ثبت‌شده ({schoolCommitments.length})</strong>
-            {schoolCommitments.length === 0 ? <p style={{ fontSize: 12, color: "#706578" }}>هنوز ساعتی ثبت نشده.</p> : (
-              <div style={{ display: "grid", gap: 8 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 8 }}>
-                  {WEEKDAY_ORDER.map((wd) => {
-                    const c = schoolCommitments.find((x) => x.weekday === wd);
-                    if (!c) return <div key={wd} style={{ border: "1px dashed #e7e1ec", borderRadius: 8, padding: 10, color: "#706578", fontSize: 12 }}>{WEEKDAY_LABEL[wd]} — بدون مدرسه</div>;
-                    const isEditing = editSchoolId === c.id;
-                    return (
-                      <div key={wd} style={{ border: "1px solid #e7e1ec", borderRadius: 8, padding: 10, display: "grid", gap: 6, opacity: c.active ? 1 : 0.6 }}>
-                        <strong style={{ fontSize: 12 }}>{WEEKDAY_LABEL[wd]} {c.active ? "" : "· غیرفعال"}</strong>
-                        {isEditing ? (
-                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                            <input type="time" value={editSchoolStart} onChange={(e) => setEditSchoolStart(e.target.value)} />
-                            <input type="time" value={editSchoolEnd} onChange={(e) => setEditSchoolEnd(e.target.value)} />
-                            <button onClick={() => saveSchoolEdit(c)} style={{ background: "#5B0FAD", color: "white", borderRadius: 6, padding: "4px 8px" }}>ذخیره</button>
-                            <button onClick={() => setEditSchoolId(null)} style={{ border: "1px solid #e7e1ec", borderRadius: 6, padding: "4px 8px" }}>لغو</button>
-                          </div>
-                        ) : (
-                          <span style={{ fontSize: 12 }}>{c.start_time.slice(0, 5)} تا {c.end_time.slice(0, 5)}</span>
-                        )}
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          {!isEditing && <button onClick={() => { setEditSchoolId(c.id); setEditSchoolStart(c.start_time.slice(0, 5)); setEditSchoolEnd(c.end_time.slice(0, 5)); }} style={{ fontSize: 12, border: "1px solid #e7e1ec", borderRadius: 6, padding: "4px 8px" }}>ویرایش ساعت</button>}
-                          <button onClick={() => toggleActive(c)} style={{ fontSize: 12, border: "1px solid #e7e1ec", borderRadius: 6, padding: "4px 8px" }}>{c.active ? "غیرفعال" : "فعال‌سازی"}</button>
-                          <button onClick={() => removeCommitment(c)} style={{ fontSize: 12, color: "#a12626", border: "1px solid #fecaca", borderRadius: 6, padding: "4px 8px" }}>حذف</button>
-                        </div>
-                        {(c.valid_from || c.valid_until) && <small style={{ fontSize: 11, color: "#706578" }}>{c.valid_from || "…"} تا {c.valid_until || "…"} </small>}
-                      </div>
-                    );
-                  })}
-                </div>
+          {/* Active day header with icon actions */}
+          <div style={{display:"flex", gap:8, alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", background:"#faf9fc", border:"1px solid #e7e1ec", borderRadius:8, padding:"8px 10px"}}>
+            <strong style={{fontSize:13}}>{WEEKDAY_LABEL[activeDay]} {isSchool? "· مدرسه":"· بدون مدرسه"} {schoolCommitForDay? `· ${schoolCommitForDay.start_time.slice(0,5)} تا ${schoolCommitForDay.end_time.slice(0,5)}`: ""}</strong>
+            <div style={{display:"flex", gap:4, alignItems:"center"}}>
+              <IconButton icon="copy" label="کپی برنامه این روز" onClick={()=>{ setCopySource(activeDay); setCopyTargets([]);}} />
+              <IconButton icon={isSchool?"trash":"plus"} label={isSchool?"حذف روز از مدرسه":"افزودن به روزهای مدرسه"} onClick={()=>toggleSchoolDay(activeDay)} variant={isSchool?"danger":undefined} />
+            </div>
+          </div>
+
+          {copySource!==null && (
+            <div style={{border:"1px solid #d9c6ec", background:"#fcfaff", borderRadius:8, padding:8, display:"grid", gap:6}}>
+              <span style={{fontSize:11}}>کپی از {WEEKDAY_LABEL[copySource]} به:</span>
+              <div style={{display:"flex", flexWrap:"wrap", gap:6}}>{DAY_TABS.filter(w=>w!==copySource).map(wd=> <button key={wd} onClick={()=> setCopyTargets(v=> v.includes(wd)? v.filter(x=>x!==wd): [...v, wd])} style={{padding:"4px 8px", borderRadius:6, border: copyTargets.includes(wd)?"1px solid #5B0FAD":"1px solid #e7e1ec", background: copyTargets.includes(wd)?"#f6f1fb":"white", fontSize:12}}>{WEEKDAY_LABEL[wd]}</button>)}</div>
+              <div style={{display:"flex", gap:6}}><button onClick={doCopy} disabled={!copyTargets.length} style={{background:"#5B0FAD", color:"white", borderRadius:6, padding:"6px 12px", fontSize:12}}>تأیید کپی</button><button onClick={()=>{setCopySource(null); setCopyTargets([]);}} style={{border:"1px solid #e7e1ec", borderRadius:6, padding:"6px 12px", fontSize:12}}>لغو</button></div>
+            </div>
+          )}
+
+          {/* Zang table - user-friendly: click-to-type, no edit button */}
+          {isSchool ? (
+            <div style={{display:"grid", gap:8}}>
+              <div style={{display:"flex", gap:6, flexWrap:"wrap", alignItems:"center", background:"#f6f1fb", border:"1px solid #e7e1ec", borderRadius:8, padding:"8px 10px"}}>
+                <span style={{fontSize:11, fontWeight:700}}>طول هر زنگ:</span>
+                <button type="button" onClick={()=>handlePresetChange("90")} style={{padding:"5px 10px", borderRadius:20, border: periodPreset==="90"?"1px solid #5B0FAD":"1px solid #e7e1ec", background: periodPreset==="90"?"#5B0FAD":"white", color: periodPreset==="90"?"white":"#16041E", fontSize:11, fontWeight:700}}>۱:۳۰ (۹۰ دقیقه)</button>
+                <button type="button" onClick={()=>handlePresetChange("45")} style={{padding:"5px 10px", borderRadius:20, border: periodPreset==="45"?"1px solid #5B0FAD":"1px solid #e7e1ec", background: periodPreset==="45"?"#5B0FAD":"white", color: periodPreset==="45"?"white":"#16041E", fontSize:11, fontWeight:700}}>۴۵ دقیقه</button>
+                <button type="button" onClick={()=>handlePresetChange("custom")} style={{padding:"5px 10px", borderRadius:20, border: periodPreset==="custom"?"1px solid #5B0FAD":"1px solid #e7e1ec", background: periodPreset==="custom"?"#5B0FAD":"white", color: periodPreset==="custom"?"white":"#16041E", fontSize:11}}>دلخواه</button>
+                {periodPreset!=="custom" && (<><span style={{fontSize:11, color:"#706578"}}>· زنگ تفریح:</span><select value={breakMins} onChange={e=>handleBreakChange(Number(e.target.value))} style={{fontSize:11, border:"1px solid #e7e1ec", borderRadius:6, padding:"2px 6px"}}><option value={5}>۵ دقیقه</option><option value={10}>۱۰ دقیقه</option><option value={15}>۱۵ دقیقه</option></select></>)}
+                <span style={{fontSize:11, color:"#706578"}}>{periodPreset==="custom" ? "زمان‌ها دستی — روی ساعت کلیک کنید" : `شروع ۰۷:۳۰ · ${periodPreset==="90"?"۹۰": "۴۵"} دقیقه هر زنگ`}</span>
               </div>
-            )}
-          </div>
-
-          <div style={{ display: "grid", gap: 8, borderTop: "1px solid #e7e1ec", paddingTop: 12 }}>
-            <strong style={{ fontSize: 13 }}>جدول درس‌های مدرسه (اختیاری)</strong>
-            <p style={{ fontSize: 12, color: "#706578" }}>برای هر روز، نام درس هر زنگ را وارد کنید. خالی بگذارید اگر فقط ساعات کافی است.</p>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-              <label style={{ fontSize: 12 }}>روز
-                <select value={slotWeekday} onChange={(e) => setSlotWeekday(Number(e.target.value))} style={{ marginInlineStart: 6 }}>
-                  {WEEKDAY_ORDER.map((wd) => <option key={wd} value={wd}>{WEEKDAY_LABEL[wd]}</option>)}
-                </select>
-              </label>
-              <span style={{ fontSize: 11, color: "#706578" }}>{schoolSlots.filter((s) => s.weekday === slotWeekday).length} زنگ ثبت‌شده</span>
-            </div>
-            <div style={{ display: "grid", gap: 6 }}>
-              {slotPeriods.map((row) => (
-                <label key={row.period} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12 }}>زنگ {row.period}
-                  <input value={row.subject_name} onChange={(e) => setSlotPeriods((cur) => cur.map((r) => r.period === row.period ? { ...r, subject_name: e.target.value } : r))} placeholder="نام درس" style={{ flex: 1 }} />
-                </label>
+              <div style={{display:"grid", gridTemplateColumns:"32px 1fr 96px 96px 28px", gap:6, background:"#faf9fc", padding:"6px 8px", fontSize:11, fontWeight:700, borderRadius:8, border:"1px solid #e7e1ec"}}><span>#</span><span>درس / زنگ</span><span>شروع</span><span>پایان</span><span></span></div>
+              {slotsDraft.map((z,i)=>(
+                <div key={i} style={{display:"grid", gridTemplateColumns:"32px 1fr 96px 96px 28px", gap:6, alignItems:"center"}}>
+                  <span style={{width:26, height:26, display:"grid", placeItems:"center", background:"#f6f1fb", border:"1px solid #e7e1ec", borderRadius:6, fontSize:11, fontWeight:700}}>{i+1}</span>
+                  <input value={z.subject_name} onChange={e=> setSlotsDraft(v=> v.map((x,idx)=> idx===i? {...x, subject_name:e.target.value}:x))} placeholder="نام درس — کلیک و تایپ" style={{width:"100%", padding:"6px 8px", border:"1px solid #e7e1ec", borderRadius:8, fontSize:12, background:"white"}} />
+                  {periodPreset==="custom" ? (
+                    <>
+                      <input type="time" value={z.start_time} onChange={e=> setSlotsDraft(v=> v.map((x,idx)=> idx===i? {...x, start_time:e.target.value}:x))} style={{padding:"4px 6px", border:"1px solid #e7e1ec", borderRadius:8, fontSize:11}} />
+                      <input type="time" value={z.end_time} onChange={e=> setSlotsDraft(v=> v.map((x,idx)=> idx===i? {...x, end_time:e.target.value}:x))} style={{padding:"4px 6px", border:"1px solid #e7e1ec", borderRadius:8, fontSize:11}} />
+                    </>
+                  ) : (
+                    <>
+                      <span style={{fontSize:11, textAlign:"center", padding:"6px", border:"1px solid #f0e8f7", borderRadius:8, background:"#fcfaff"}}>{z.start_time}</span>
+                      <span style={{fontSize:11, textAlign:"center", padding:"6px", border:"1px solid #f0e8f7", borderRadius:8, background:"#fcfaff"}}>{z.end_time} <small style={{color:"#706578"}}>· {durationLabel(timeToMins(z.end_time)-timeToMins(z.start_time))}</small></span>
+                    </>
+                  )}
+                  <button type="button" aria-label="حذف زنگ" onClick={()=> setSlotsDraft(v=> { const next=v.filter((_,idx)=>idx!==i).map((x,idx)=>({...x, period: idx+1})); if(periodPreset!=="custom"){ const dur=periodPreset==="90"?90:45; return applySequential(next, dur, breakMins);} return next;})} style={{width:28, height:28, border:"1px solid #fecaca", background:"#fff", color:"#c0392b", borderRadius:6, fontSize:14, lineHeight:"1"}}>×</button>
+                </div>
               ))}
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => setSlotPeriods((cur) => [...cur, { period: cur.length + 1, subject_name: "" }].slice(0, 12))} style={{ fontSize: 12, border: "1px solid #e7e1ec", borderRadius: 6, padding: "6px 10px" }}>＋ افزودن زنگ</button>
-                {slotPeriods.length > 1 && <button onClick={() => setSlotPeriods((cur) => cur.slice(0, -1))} style={{ fontSize: 12, border: "1px solid #e7e1ec", borderRadius: 6, padding: "6px 10px" }}>حذف آخرین زنگ</button>}
-              </div>
-              <button onClick={saveSlots} disabled={slotsBusy} style={{ justifySelf: "start", background: "#5B0FAD", color: "white", borderRadius: 8, padding: "8px 16px" }}>{slotsBusy ? "در حال ذخیره…" : "ذخیره جدول درس‌ها"}</button>
-              {schoolSlots.filter((s) => s.weekday === slotWeekday).length > 0 && (
-                <div style={{ fontSize: 12, background: "#f6f1fb", border: "1px solid #e7e1ec", borderRadius: 8, padding: 8 }}>
-                  {schoolSlots.filter((s) => s.weekday === slotWeekday).sort((a, b) => a.period - b.period).map((s) => <div key={s.id}>زنگ {s.period}: {s.subject_name}</div>)}
-                </div>
-              )}
+              <div style={{display:"flex", gap:8, alignItems:"center"}}><button type="button" onClick={addZang} style={{background:"white", border:"1px dashed #c9b6e0", color:"#5B0FAD", borderRadius:8, padding:"6px 12px", fontSize:12, fontWeight:700}}>+ افزودن زنگ</button><span style={{fontSize:11, color:"#706578"}}>{periodPreset==="custom" ? "در حالت دلخواه زمان‌ها آزاد است" : `حالت ${periodPreset==="90"?"۹۰دقیقه‌ای":"۴۵دقیقه‌ای"} — افزایش خودکار زمان‌ها`}</span></div>
+              <div style={{display:"flex", gap:8}}><button onClick={saveSlots} disabled={saving} style={{background:"#5B0FAD", color:"white", borderRadius:8, padding:"8px 16px", fontSize:12, fontWeight:700}}>{saving?"در حال ذخیره…":"ذخیره زنگ‌ها"}</button><span style={{fontSize:11, color:"#706578", alignSelf:"center"}}>تغییر طول، زمان همه زنگ‌ها را مرتب می‌کند</span></div>
             </div>
-          </div>
-        </div>
+          ) : (
+            <p style={{fontSize:12, color:"#706578"}}>این روز مدرسه ندارد — برای افزودن زنگ، ابتدا آن را به روزهای مدرسه اضافه کنید.</p>
+          )}
+        </>
       ) : (
-        <div style={{ display: "grid", gap: 16 }}>
-          <div style={{ display: "grid", gap: 8, background: "#faf9fc", border: "1px solid #e7e1ec", borderRadius: 10, padding: 12 }}>
-            <strong style={{ fontSize: 13 }}>افزودن فعالیت ثابت</strong>
-            <label style={{ display: "grid", gap: 4, fontSize: 12 }}>عنوان<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثال: کلاس زبان" /></label>
-            <label style={{ display: "grid", gap: 4, fontSize: 12 }}>نوع
-              <select value={kind} onChange={(e) => setKind(e.target.value as Commitment["kind"])}>
-                {KIND_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </label>
-            <label style={{ display: "grid", gap: 6, fontSize: 12 }}>روزها
-              <WeekdayPicker value={weekdays} onChange={setWeekdays} />
-            </label>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <label style={{ display: "grid", gap: 4, fontSize: 12 }}>شروع<input type="time" value={start} onChange={(e) => setStart(e.target.value)} /></label>
-              <label style={{ display: "grid", gap: 4, fontSize: 12 }}>پایان<input type="time" value={end} onChange={(e) => setEnd(e.target.value)} /></label>
-              <label style={{ display: "grid", gap: 4, fontSize: 12 }}>از تاریخ<input type="date" value={validFrom} onChange={(e) => setValidFrom(e.target.value)} /></label>
-              <label style={{ display: "grid", gap: 4, fontSize: 12 }}>تا تاریخ<input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} /></label>
-            </div>
-            <button onClick={submitOther} disabled={busy} style={{ justifySelf: "start", background: "#5B0FAD", color: "white", borderRadius: 8, padding: "8px 16px" }}>{busy ? "در حال ذخیره…" : "ثبت فعالیت"}</button>
+        <div style={{display:"grid", gap:12}}>
+          {/* Day tabs for events */}
+          <div style={{display:"flex", gap:6, overflowX:"auto", paddingBottom:4}}>
+            {DAY_TABS.map(wd=> <button key={wd} onClick={()=>setEvDay(wd)} style={{padding:"6px 10px", borderRadius:8, border: evDay===wd?"1px solid #5B0FAD":"1px solid #e7e1ec", background: evDay===wd?"#5B0FAD":"white", color: evDay===wd?"white":"#16041E", fontSize:12}}>{WEEKDAY_LABEL[wd]}</button>)}
           </div>
+          <div style={{display:"flex", gap:6, flexWrap:"wrap", alignItems:"end"}}>
+            <label style={{display:"grid", gap:4, fontSize:11}}>عنوان<input value={evTitle} onChange={e=>setEvTitle(e.target.value)} placeholder="جلسه" style={{minWidth:120}} /></label>
+            <label style={{display:"grid", gap:4, fontSize:11}}>شروع<input type="time" value={evStart} onChange={e=>setEvStart(e.target.value)} /></label>
+            <label style={{display:"grid", gap:4, fontSize:11}}>پایان<input type="time" value={evEnd} onChange={e=>setEvEnd(e.target.value)} /></label>
+            <button onClick={submitEvent} style={{background:"#5B0FAD", color:"white", borderRadius:8, padding:"6px 12px", fontSize:12}}>ثبت برای {WEEKDAY_LABEL[evDay]}</button>
+          </div>
+          {dayEvents.length>0 && <div style={{display:"grid", gap:6}}>{dayEvents.map(ev=> <div key={ev.id} style={{display:"flex", justifyContent:"space-between", gap:6, border:"1px solid #e7e1ec", borderRadius:6, padding:"6px 8px", fontSize:12}}><span>{ev.title} · {ev.start_time.slice(0,5)}-{ev.end_time.slice(0,5)}</span><IconButton icon="trash" label="حذف رویداد" variant="danger" onClick={async()=>{ if(confirm("حذف شود؟")){ await api(`/planning/fixed-events/${ev.id}/`, token, "DELETE"); setEvents(events.filter(x=>x.id!==ev.id));}}} /></div>)}</div>}
 
-          <div style={{ display: "grid", gap: 8 }}>
-            <strong style={{ fontSize: 13 }}>فهرست فعالیت‌ها ({otherCommitments.length})</strong>
-            {grouped.length === 0 ? <p style={{ fontSize: 12, color: "#706578" }}>هنوز فعالیتی ثبت نشده.</p> : (
-              <div style={{ display: "grid", gap: 8 }}>
-                {grouped.map((group) => {
-                  const rep = group[0];
-                  const isEditing = editing?.group_id ? editing.group_id === rep.group_id : editing?.id === rep.id;
-                  return (
-                    <div key={rep.group_id || rep.id} style={{ border: "1px solid #e7e1ec", borderRadius: 10, padding: 12, display: "grid", gap: 8, opacity: rep.active ? 1 : 0.6 }}>
-                      {isEditing ? (
-                        <div style={{ display: "grid", gap: 8 }}>
-                          <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
-                          <select value={editKind} onChange={(e) => setEditKind(e.target.value as Commitment["kind"])}>
-                            {KIND_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                          </select>
-                          <div style={{ display: "flex", gap: 8 }}><input type="time" value={editStart} onChange={(e) => setEditStart(e.target.value)} /><input type="time" value={editEnd} onChange={(e) => setEditEnd(e.target.value)} /></div>
-                          <div style={{ display: "flex", gap: 8 }}><button onClick={saveEdit} style={{ background: "#5B0FAD", color: "white", borderRadius: 6, padding: "6px 10px" }}>ذخیره</button><button onClick={() => setEditing(null)} style={{ border: "1px solid #e7e1ec", borderRadius: 6, padding: "6px 10px" }}>انصراف</button></div>
-                        </div>
-                      ) : (
-                        <>
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                            <strong style={{ fontSize: 13 }}>{rep.title} <small style={{ fontWeight: 400, color: "#706578" }}>· {commitmentLabel[rep.kind]}</small></strong>
-                            <span style={{ fontSize: 12, background: rep.active ? "#ecfdf5" : "#f3f4f6", border: "1px solid #e7e1ec", borderRadius: 20, padding: "2px 8px" }}>{rep.active ? "فعال" : "غیرفعال"}</span>
-                          </div>
-                          <div style={{ fontSize: 12, color: "#16041E" }}>{group.map((c) => WEEKDAY_LABEL[c.weekday]).join("، ")} · {rep.start_time.slice(0, 5)} تا {rep.end_time.slice(0, 5)}</div>
-                          {(rep.valid_from || rep.valid_until) && <small style={{ fontSize: 11, color: "#706578" }}>{rep.valid_from || "…"} تا {rep.valid_until || "…"}</small>}
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                            <button onClick={() => { setEditing(rep); setEditTitle(rep.title); setEditKind(rep.kind); setEditStart(rep.start_time.slice(0, 5)); setEditEnd(rep.end_time.slice(0, 5)); }} style={{ fontSize: 12, border: "1px solid #e7e1ec", borderRadius: 6, padding: "6px 10px" }}>ویرایش</button>
-                            <button onClick={() => toggleActive(rep)} style={{ fontSize: 12, border: "1px solid #e7e1ec", borderRadius: 6, padding: "6px 10px" }}>{rep.active ? "غیرفعال‌سازی" : "فعال‌سازی"}</button>
-                            <button onClick={() => removeCommitment(rep)} style={{ fontSize: 12, color: "#a12626", border: "1px solid #fecaca", borderRadius: 6, padding: "6px 10px" }}>حذف</button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+          <div style={{display:"grid", gap:6, background:"#faf9fc", border:"1px solid #e7e1ec", borderRadius:8, padding:8}}>
+            <strong style={{fontSize:12}}>فعالیت تکرارشونده (مثل باشگاه)</strong>
+            <div style={{display:"flex", gap:6, flexWrap:"wrap"}}><input value={title} onChange={e=>setTitle(e.target.value)} placeholder="باشگاه" style={{flex:"1 1 120px"}} /><select value={kind} onChange={e=>setKind(e.target.value as Commitment["kind"])} style={{fontSize:12}}>{KIND_OPTIONS.map(o=> <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
+            <div style={{display:"flex", flexWrap:"wrap", gap:4}}>{DAY_TABS.map(wd=> <button key={wd} onClick={()=> setWeekdays(v=> v.includes(wd)? v.filter(x=>x!==wd): [...v, wd])} style={{padding:"4px 8px", borderRadius:6, border: weekdays.includes(wd)?"1px solid #5B0FAD":"1px solid #e7e1ec", background: weekdays.includes(wd)?"#f6f1fb":"white", fontSize:11}}>{WEEKDAY_LABEL[wd]}</button>)}</div>
+            <div style={{display:"flex", gap:6}}><input type="time" value={start} onChange={e=>setStart(e.target.value)} /><input type="time" value={end} onChange={e=>setEnd(e.target.value)} /><button onClick={submitRecurring} style={{background:"#5B0FAD", color:"white", borderRadius:6, padding:"6px 12px", fontSize:12}}>ثبت</button></div>
           </div>
+          {grouped.length>0 && <div style={{display:"grid", gap:6}}>{grouped.map(g=>{ const rep=g[0]; return <div key={rep.group_id||rep.id} style={{display:"flex", justifyContent:"space-between", gap:6, border:"1px solid #e7e1ec", borderRadius:6, padding:"6px 8px", fontSize:11, opacity: rep.active?1:0.6}}><span>{rep.title} · {g.map(c=>WEEKDAY_LABEL[c.weekday]).join("، ")} {rep.start_time.slice(0,5)}-{rep.end_time.slice(0,5)} · {commitmentLabel[rep.kind]}</span><IconButton icon="trash" label="حذف" variant="danger" onClick={async()=>{ if(confirm("حذف شود؟")){ if(rep.group_id) await client.groupDelete(rep.group_id); else await api<void>(`/planning/commitments/${rep.id}/`, token, "DELETE"); onRefresh();}}} /></div>;})}</div>}
         </div>
       )}
     </section>

@@ -11,6 +11,7 @@ import FixedSchedulePanel from "./FixedSchedulePanel";
 import { PanelIcon, useDialogFocus } from "@/components/counselor/PanelUI";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, allPages } from "@/lib/api";
+import { IconButton } from "@/components/counselor/PanelUI";
 import {
   addDaysISO,
   Commitment,
@@ -211,6 +212,9 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
   const [pendingWrites, setPendingWrites] = useState(0);
   const [saveFailed, setSaveFailed] = useState(false);
   const [hasSaved, setHasSaved] = useState(false);
+  const [examDates, setExamDates] = useState<string[]>([]);
+  // draft cache: optimistic plan before Update
+  const [hasDraft, setHasDraft] = useState(false);
 
   const today = tehranTodayISO();
   const [commitments, setCommitments] = useState<Commitment[]>([]);
@@ -259,7 +263,7 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
         else if (!q.has("new") && own.length) setPlanId(own[0].id);
         // fetch academic tree once
         fetchAcademicTree(token, { student: String(s.id) }).then((t) => { if (live) setTree(t); }).catch(reason => { if (live) setError(apiErrorMessage(reason)); });
-        // fetch fixed commitments for timeline + school slots
+      // fetch fixed commitments for timeline + school slots
         allPages<Commitment>(`/planning/commitments/?student=${s.id}`, token).then((rows)=>{ if(live) setCommitments(rows); }).catch(reason => { if (live) setError(apiErrorMessage(reason)); });
         allPages<SchoolSlot>(`/planning/school-slots/?student=${s.id}`, token).then((rows)=>{ if(live) setSchoolSlots(rows); }).catch(()=>{});
       })
@@ -273,15 +277,39 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
     if (!id) return;
     const p = await client.getPlan(id);
     if (planRef.current && planRef.current.id !== id) return;
+    // try restore draft cache if exists and fresher
+    const key = `draft:plan:${id}`;
+    try{
+      const raw = localStorage.getItem(key);
+      if(raw){
+        const draft = JSON.parse(raw) as Plan;
+        if((draft as unknown as {updated_at?:string}).updated_at && (p as unknown as {updated_at?:string}).updated_at && (draft as unknown as {updated_at:string}).updated_at >= (p as unknown as {updated_at:string}).updated_at){
+          setPlan(draft); setPlans((cur) => cur.map((x) => (x.id === id ? draft : x))); setExamDates((draft as unknown as {exam_dates?: string[]}).exam_dates||[]); setHasDraft(true); return;
+        } else localStorage.removeItem(key);
+      }
+    }catch{}
     setPlan(p);
+    setExamDates((p as unknown as {exam_dates?: string[]}).exam_dates||[]);
     setPlans((cur) => cur.map((x) => (x.id === id ? p : x)));
   }, [client, planId, setPlan]);
+
+  // Live resync: when fixed-schedule panel saved school slots, patch the open plan without full reload flicker
+  useEffect(()=>{
+    const handler = (ev: Event) => {
+      const detail = (ev as CustomEvent).detail as { planId: number; created?: number } | undefined;
+      const id = detail?.planId ?? planRef.current?.id ?? planId;
+      if(!id) return;
+      refresh(id).then(()=> notify(setNotice, "برنامه با برنامه مدرسه همگام شد.")).catch(()=>{});
+    };
+    window.addEventListener("plan:fixed-resynced" as unknown as string, handler as EventListener);
+    return ()=> window.removeEventListener("plan:fixed-resynced" as unknown as string, handler as EventListener);
+  }, [planId, refresh]);
 
   useEffect(() => {
     if (!planId) return;
     let live = true;
     api<Plan>(`/planning/plans/${planId}/`, token)
-      .then((p) => { if (live) setPlan(p); })
+      .then((p) => { if (live) { setPlan(p); setExamDates((p as unknown as {exam_dates?: string[]}).exam_dates||[]); } })
       .catch((r) => { if (live) setError(apiErrorMessage(r)); });
     return () => { live = false; };
   }, [planId, token, setPlan]);
@@ -294,6 +322,8 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
     } catch {}
   }, [student, token]);
 
+  const [applyFixedChoice, setApplyFixedChoice] = useState<"apply"|"empty">("apply");
+  const [newPlanStep, setNewPlanStep] = useState<1|2>(1);
   const creatingPlan = useRef(false);
   async function createPlan(e: React.FormEvent) {
     e.preventDefault();
@@ -305,8 +335,8 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
       end.setDate(end.getDate() + 6);
       const endDate = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2,"0")}-${String(end.getDate()).padStart(2,"0")}`;
       const effectiveTitle = title.trim() || planTitleSuggestion(weekStart, endDate);
-      const created = await client.createPlan({ student: student.id, start_date: weekStart, end_date: endDate, title: effectiveTitle });
-      setHasSaved(true); setSaveFailed(false); setPlans((c) => [created, ...c]); setPlanId(created.id); setPlan(created); setTitle(""); setShowNewPlan(false); notify(setNotice, "برنامه هفتگی ساخته شد.");
+      const created = await client.createPlan({ student: student.id, start_date: weekStart, end_date: endDate, title: effectiveTitle, apply_fixed: applyFixedChoice==="apply", exam_dates: examDates });
+      setHasSaved(true); setSaveFailed(false); setPlans((c) => [created, ...c]); setPlanId(created.id); setPlan(created); setTitle(""); setExamDates([]); setNewPlanStep(1); setShowNewPlan(false); notify(setNotice, applyFixedChoice==="apply" ? "برنامه با باکس‌های ثابت ساخته شد." : "برنامه خالی ساخته شد.");
     } catch (r) { setSaveFailed(true); setError(apiErrorMessage(r)); } finally { creatingPlan.current = false; setBusy(false); setPendingWrites(count => count - 1); }
   }
 
@@ -342,7 +372,7 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
       const snapshot = planRef.current;
       if (!snapshot) return;
       setError(""); setSaveFailed(false); setPendingWrites(count => count + 1);
-      if (optimistic) setPlan(optimistic(snapshot));
+      if (optimistic) { const nxt = optimistic(snapshot); setPlan(nxt); try{ localStorage.setItem(`draft:plan:${snapshot.id}`, JSON.stringify({...nxt, updated_at: new Date().toISOString()})); setHasDraft(true);}catch{} } 
       try {
         const result = await operation();
         if (result && typeof result === "object" && "plan_day" in result) {
@@ -379,6 +409,13 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
     try { await mutate(`item:${item.id}`, () => client.deleteItem(item.id), previous => ({ ...previous, days: previous.days?.map(day => ({ ...day, items: day.items.filter(old => old.id !== item.id) })) }), "فعالیت حذف شد."); setDeleteTarget(null); } catch { /* retain confirmation for retry */ }
   }
   async function transfer(item: PlanItem, target: { date: string; minutes: number | null; ordering?: number; error?: string | null }) {
+    // No-op revert: same day + same start (scroll jitter while picking up) -> silently drop without API
+    const isSameSpot = (() => {
+      if (!item.start_time || target.minutes === null) return false;
+      const origin = planRef.current?.days?.find(d=> d.items.some(x=> x.id===item.id))?.date;
+      return origin === target.date && item.start_time.slice(0,5) === minutesToTime(target.minutes).slice(0,5);
+    })();
+    if (isSameSpot) return;
     if (target.error) { setError(target.error); return; }
     const duration = itemDuration(item);
     const start = target.minutes === null ? null : minutesToTime(target.minutes);
@@ -503,8 +540,13 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
                 </select>
               )}
             </div>
-            <div className="ws-toolbar-actions"><span className="ws-save-state" role="status">{pendingWrites ? "در حال ذخیره…" : saveFailed ? "خطا در ذخیره" : hasSaved ? "ذخیره شد" : ""}</span>
+            <div className="ws-toolbar-actions"><span className="ws-save-state" role="status">{pendingWrites ? "در حال ذخیره…" : hasDraft ? "تغییرات ذخیره موقت شد" : saveFailed ? "خطا در ذخیره" : hasSaved ? "ذخیره شد" : ""}</span>
               {plan && <><button type="button" disabled={actionKeys.has("export:excel")} onClick={() => { void exportPlan("excel"); }}>Excel</button><button type="button" disabled={actionKeys.has("export:pdf")} onClick={() => { void exportPlan("pdf"); }}>PDF</button></>}
+              {hasDraft && plan && <button type="button" onClick={async()=>{ if(planId) { localStorage.removeItem(`draft:plan:${planId}`); setHasDraft(false); await refresh(planId); notify(setNotice,"پیش‌نویس پاک شد."); }}}>لغو پیش‌نویس</button>}
+              {plan && <button type="button" disabled={!hasDraft} title={hasDraft?"به‌روزرسانی نهایی":"تغییری برای اعمال نیست"} onClick={async()=>{ if(!planId||!hasDraft) return; try{ const raw=localStorage.getItem(`draft:plan:${planId}`); if(!raw) return; const draft=JSON.parse(raw); // push exam_dates if changed
+                  if(draft.exam_dates) await api(`/planning/plans/${planId}/`, token, "PATCH", {exam_dates: draft.exam_dates, title: draft.title});
+                  localStorage.removeItem(`draft:plan:${planId}`); setHasDraft(false); await refresh(planId); notify(setNotice,"برنامه به‌روزرسانی شد."); }catch(e){ setError(apiErrorMessage(e)); }}}>به‌روزرسانی برنامه</button>}
+              {plan && <IconButton icon="trash" label="حذف برنامه" variant="danger" onClick={async()=>{ if(!plan) return; if(!confirm("برنامه هفتگی حذف شود؟")) return; try{ await api(`/planning/plans/${plan.id}/`, token, "DELETE"); setPlans(v=>v.filter(x=>x.id!==plan.id)); setPlan(null); setPlanId(null); localStorage.removeItem(`draft:plan:${plan.id}`); notify(setNotice,"برنامه حذف شد."); }catch(e){ setError(apiErrorMessage(e)); }}} />}
               {plan?.status === "DRAFT" && <button type="button" className="ws-primary" disabled={actionKeys.has(`publish:${plan.id}`)} onClick={() => { void publishPlan(); }}>{actionKeys.has(`publish:${plan.id}`) ? "در حال انتشار…" : "انتشار برنامه"}</button>}
               <button type="button" className="ws-toolbar-new" onClick={()=> setShowNewPlan(true)}>＋ برنامه جدید</button>
             </div>
@@ -523,27 +565,60 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
       </section>
       {/* New plan modal (no longer always visible) */}
       {showNewPlan && (
-        <div className="ws-modal" role="dialog" aria-modal="true" aria-label="برنامه جدید" onClick={()=> setShowNewPlan(false)}>
-          <div className="ws-modal-card" onClick={e=>e.stopPropagation()}>
+        <div className="ws-modal" role="dialog" aria-modal="true" aria-label="برنامه جدید" onClick={()=> { setShowNewPlan(false); setNewPlanStep(1); }}>
+          <div className="ws-modal-card" onClick={e=>e.stopPropagation()} style={{maxWidth:560}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <h3 style={{fontSize:".9rem",fontWeight:700}}>برنامه جدید</h3>
-              <button type="button" className="ws-subtle" aria-label="بستن برنامه جدید" onClick={()=> setShowNewPlan(false)}><PanelIcon name="close"/></button>
+              <h3 style={{fontSize:".95rem",fontWeight:800}}>برنامه جدید</h3>
+              <button type="button" className="ws-subtle" aria-label="بستن برنامه جدید" onClick={()=> { setShowNewPlan(false); setNewPlanStep(1); }}><PanelIcon name="close"/></button>
+            </div>
+            <div className="ws-wizard-steps" aria-hidden>
+              <span className={`ws-wizard-stepdot ${newPlanStep===1?"is-active": newPlanStep===2?"is-done":""}`}>۱</span>
+              <span style={{flex:1, height:2, background: newPlanStep===2? "#5B0FAD":"#e7e1ec", borderRadius:2}}/>
+              <span className={`ws-wizard-stepdot ${newPlanStep===2?"is-active":""}`}>۲</span>
             </div>
             {error && <p className="ws-error" role="alert">{error}</p>}
-            <form onSubmit={createPlan} style={{display:"grid",gap:".6rem"}}>
-              <div className="ws-date-picker">
-                <label>شروع برنامه
-                  <input type="date" required value={weekStart} onChange={(e)=> setWeekStart(e.target.value)} />
-                  <small>{formatJalaliShort(weekStart)} — تا {formatJalaliShort(addDaysISO(weekStart,6))}</small>
-                </label>
-                <div className="ws-date-quick">
-                  <button type="button" onClick={()=> setWeekStart(tehranTodayISO())}>امروز — {formatJalaliShort(tehranTodayISO())}</button>
-                  <button type="button" onClick={()=> setWeekStart(tehranTomorrowISO())}>فردا — {formatJalaliShort(tehranTomorrowISO())}</button>
+            {newPlanStep===1 ? (
+              <div style={{display:"grid", gap:12}}>
+                <div className="ws-date-picker">
+                  <label>شروع برنامه
+                    <input type="date" required value={weekStart} onChange={(e)=> setWeekStart(e.target.value)} />
+                    <small>{formatJalaliShort(weekStart)} — تا {formatJalaliShort(addDaysISO(weekStart,6))}</small>
+                  </label>
+                  <div className="ws-date-quick">
+                    <button type="button" onClick={()=> setWeekStart(tehranTodayISO())}>امروز — {formatJalaliShort(tehranTodayISO())}</button>
+                    <button type="button" onClick={()=> setWeekStart(tehranTomorrowISO())}>فردا — {formatJalaliShort(tehranTomorrowISO())}</button>
+                  </div>
+                </div>
+                <label style={{display:"grid",gap:".3rem",fontSize:".82rem"}}>عنوان (اختیاری)<input value={title} onChange={(e)=> setTitle(e.target.value)} placeholder={planTitleSuggestion(weekStart, addDaysISO(weekStart,6))} /></label>
+                <div style={{display:"grid", gap:8}}>
+                  <strong style={{fontSize:12}}>نوع برنامه</strong>
+                  <button type="button" className={`ws-choice-card ${applyFixedChoice==="apply"?"is-selected":""}`} onClick={()=>setApplyFixedChoice("apply")}><b>◧</b><span><strong style={{fontSize:13}}>با موارد ثابت</strong><small style={{color:"#706578"}}>مدرسه و کلاس‌ها خودکار به برنامه اضافه می‌شود</small></span></button>
+                  <button type="button" className={`ws-choice-card ${applyFixedChoice==="empty"?"is-selected":""}`} onClick={()=>setApplyFixedChoice("empty")}><b>◫</b><span><strong style={{fontSize:13}}>برنامه خالی</strong><small style={{color:"#706578"}}>بدون باکس ثابت — بعداً خودت بچین</small></span></button>
+                </div>
+                <div style={{display:"flex", gap:8, justifyContent:"end"}}>
+                  <button type="button" className="ws-subtle" onClick={()=> { setShowNewPlan(false); setNewPlanStep(1); }}>انصراف</button>
+                  <button type="button" className="ws-primary" onClick={()=> setNewPlanStep(2)}>ادامه — انتخاب روزهای آزمون</button>
                 </div>
               </div>
-              <label style={{display:"grid",gap:".2rem",fontSize:".82rem"}}>عنوان (اختیاری)<input value={title} onChange={(e)=> setTitle(e.target.value)} placeholder={planTitleSuggestion(weekStart, addDaysISO(weekStart,6))} /></label>
-              <button type="submit" disabled={busy} className="ws-primary">{busy ? "در حال ساخت…" : "ساخت برنامه ۷ روزه"}</button>
-            </form>
+            ) : (
+              <form onSubmit={createPlan} style={{display:"grid",gap:12}}>
+                <div>
+                  <strong style={{fontSize:13}}>دانش‌آموز چه روزهایی آزمون/کوییز دارد؟</strong>
+                  <p style={{fontSize:11, color:"#706578", margin:"4px 0 8px"}}>روزها را انتخاب کن — روی خودِ روز در برنامه «امتحان داره» و علامت باکس آمادگی نمایش داده می‌شود.</p>
+                  <div className="ws-exam-grid" style={{display:"grid", gridTemplateColumns:"repeat(4, minmax(0,1fr))", gap:8}}>
+                    {Array.from({length:7},(_,i)=>{ const d=new Date(`${weekStart}T12:00:00`); d.setDate(d.getDate()+i); const iso=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; const label=new Intl.DateTimeFormat("fa-IR",{weekday:"long"}).format(d); const active=examDates.includes(iso); return <button key={iso} type="button" onClick={()=> setExamDates(v=> active? v.filter(x=>x!==iso): [...v, iso])} className={active?"is-active":""} style={{display:"grid", gap:4, padding:"10px 8px", borderRadius:10, border: active?"1px solid #5B0FAD":"1px solid #e7e1ec", background: active?"#f6f1fb":"white", color: active?"#5B0FAD":"#16041E"}}><span style={{fontSize:11, fontWeight:700}}>{label}</span><span style={{fontSize:11}}>{new Intl.DateTimeFormat("fa-IR-u-ca-persian",{day:"numeric", month:"short"}).format(d)}</span></button>; })}
+                  </div>
+                  {examDates.length>0 && <p style={{fontSize:11, color:"#5B0FAD", background:"#f6f1fb", border:"1px solid #e7e1ec", borderRadius:8, padding:"6px 8px", marginTop:8}}>{examDates.length} روز انتخاب شد — بعد از ساخت، هر روز گوشه کادر و بالای روز «امتحان داره» دارد و تا باکس آمادگی نگذاری، برچسب هشدار می‌ماند.</p>}
+                </div>
+                <div style={{display:"flex", gap:8, justifyContent:"space-between"}}>
+                  <button type="button" className="ws-subtle" onClick={()=> setNewPlanStep(1)}>بازگشت</button>
+                  <div style={{display:"flex", gap:8}}>
+                    <button type="button" className="ws-subtle" onClick={()=> { setExamDates([]); }}>رد شدن</button>
+                    <button type="submit" disabled={busy} className="ws-primary">{busy ? "در حال ساخت…" : "ساخت برنامه ۷ روزه"}</button>
+                  </div>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
@@ -555,7 +630,7 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
           {/* Mobile day tabs */}
           <nav className="ws-day-tabs" aria-label="روزهای هفته">
             {days.map((d) => (
-              <button key={d} aria-pressed={selectedDay === d} className={selectedDay === d ? "is-active" : ""} onClick={() => setSelectedDay(d)}>{formatJalaliShort(d)}{d === today ? " · امروز" : ""}</button>
+              <button key={d} aria-pressed={selectedDay === d} className={selectedDay === d ? "is-active" : ""} onClick={() => setSelectedDay(d)}>{formatJalaliShort(d)}{d === today ? " · امروز" : ""}{examDates.includes(d) ? " · آزمون" : ""}</button>
             ))}
             <button aria-pressed={!selectedDay} className={!selectedDay ? "is-active" : ""} onClick={() => setSelectedDay(null)}>همه روزها</button>
           </nav>

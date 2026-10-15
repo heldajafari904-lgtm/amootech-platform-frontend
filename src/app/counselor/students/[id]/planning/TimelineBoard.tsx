@@ -5,7 +5,7 @@ import { DndContext, DragOverlay, PointerSensor, TouchSensor, KeyboardSensor, us
 import { persianDate, type PlanItem, type PlanDay, type Commitment } from "@/lib/planning";
 import { PanelIcon } from "@/components/counselor/PanelUI";
 import PlanActivityCard from "./PlanActivityCard";
-import { arrangeLanes, dropConflict, itemDuration, LANE_HEIGHT, MIN_CARD_WIDTH, minutesToTime, PLANNER_END, PLANNER_START, PIXELS_PER_MINUTE, SNAP_MINUTES, tehranClock, timeFromClientX } from "./plannerTime";
+import { arrangeLanes, dropConflict, isRevertToOrigin, itemDuration, LANE_HEIGHT, MIN_CARD_WIDTH, minutesToTime, PLANNER_END, PLANNER_START, PIXELS_PER_MINUTE, SNAP_MINUTES, tehranClock, timeFromClientX } from "./plannerTime";
 import "./timeline.css";
 
 class PlannerPointerSensor extends PointerSensor {
@@ -17,7 +17,7 @@ const EMPTY_ITEMS: PlanItem[] = [];
 type Actions = { onEdit: (item: PlanItem) => void; onDelete: (item: PlanItem) => void; onDuplicate: (item: PlanItem) => void; onMoveMenu: (item: PlanItem, date: string) => void };
 type Target = { date: string; minutes: number | null; ordering?: number; error?: string | null };
 type Props = Actions & {
-  dates: string[]; days: PlanDay[]; commitments: Commitment[]; pending: Set<number>;
+  dates: string[]; days: PlanDay[]; commitments: Commitment[]; pending: Set<number>; examDates?: string[];
   copyDate: string | null; copyBusy: boolean;
   onCopy: (day: PlanDay) => void; onCopyTarget: (date: string, day: PlanDay | null) => void;
   onAdd: (date: string) => void; onDrop: (item: PlanItem, target: Target) => Promise<void>;
@@ -74,11 +74,15 @@ function TimelineDay({ date, day, clock, preview, props }: { date: string; day?:
   const source = props.copyDate === date;
   const destination = !!props.copyDate && !source;
   const active = preview?.date === date;
+  const hasExam = !!props.examDates?.includes(date);
+  const hasPrep = items.some(i => /آزمون|کوییز|کویز/.test((i.title || "") + (i.note || "")) || i.kind === "EXAM");
   const minutes = items.reduce((total,item) => total + (item.planned_duration_minutes || 0), 0);
   const tests = items.reduce((total,item) => total + (item.test_count || 0), 0);
   const now = date === clock.date && clock.minutes >= PLANNER_START && clock.minutes < PLANNER_END;
-  return <section ref={setDayNode} className={`ws-day-row timeline-day ${date === clock.date ? "is-today" : ""} ${source ? "is-copy-source" : ""} ${destination ? "is-copy-target" : ""} ${active ? preview.error ? "is-invalid-drop" : "is-valid-drop" : ""}`} data-date={date} tabIndex={destination ? 0 : undefined} onKeyDown={event => { if (destination && event.target === event.currentTarget && ["Enter", " "].includes(event.key)) { event.preventDefault(); props.onCopyTarget(date, day || null); } }} onClickCapture={event => { if (destination) { event.preventDefault(); event.stopPropagation(); if (!props.copyBusy) props.onCopyTarget(date, day || null); } }}>
-    <header className="ws-day-row-head"><div className="ws-day-row-title"><h3>{persianDate(date)}</h3>{date === clock.date && <span className="ws-badge-today">امروز</span>}{source && <span className="planning-status">مبدأ</span>}</div><div className="ws-day-row-summary"><span>{Math.floor(minutes/60).toLocaleString("fa-IR")}:{String(minutes%60).padStart(2,"0")} برنامه</span><span>{tests.toLocaleString("fa-IR")} تست</span><span>{items.length.toLocaleString("fa-IR")} فعالیت</span></div><div className="panel-row-actions"><button className="ws-copy" aria-label={`کپی ${persianDate(date)}`} disabled={!items.length || source || props.copyBusy} onClick={event => { event.stopPropagation(); if (day) props.onCopy(day); }}><PanelIcon name="copy"/></button><button className="ws-add" onClick={event => { event.stopPropagation(); props.onAdd(date); }}>＋ افزودن باکس</button></div></header>
+  return <section ref={setDayNode} className={`ws-day-row timeline-day ${hasExam ? "is-exam" : ""} ${date === clock.date ? "is-today" : ""} ${source ? "is-copy-source" : ""} ${destination ? "is-copy-target" : ""} ${active ? preview.error ? "is-invalid-drop" : "is-valid-drop" : ""}`} data-date={date} tabIndex={destination ? 0 : undefined} onKeyDown={event => { if (destination && event.target === event.currentTarget && ["Enter", " "].includes(event.key)) { event.preventDefault(); props.onCopyTarget(date, day || null); } }} onClickCapture={event => { if (destination) { event.preventDefault(); event.stopPropagation(); if (!props.copyBusy) props.onCopyTarget(date, day || null); } }}>
+    {hasExam && <div className="ws-exam-ribbon" aria-hidden><span>امتحان داره</span></div>}
+    {hasExam && <div className="ws-exam-side" aria-hidden title="امتحان داره — باکس آمادگی اضافه کن" />}
+    <header className="ws-day-row-head"><div className="ws-day-row-title"><span className="ws-exam-dot" aria-hidden={hasExam ? undefined : true} style={{visibility: hasExam ? "visible" : "hidden"}} title={hasExam ? "امتحان داره" : undefined} /><h3>{persianDate(date)}</h3>{date === clock.date && <span className="ws-badge-today">امروز</span>}{hasExam && <span className="ws-badge-exam" style={{background:"#5B0FAD", color:"white", padding:"2px 8px", borderRadius:20, fontSize:11}}>امتحان داره</span>}{hasExam && !hasPrep && <span className="ws-exam-callout" title="این روز آزمون دارد — باکس آمادگی اضافه کن"><i>!</i> باکس آمادگی</span>}{source && <span className="planning-status">مبدأ</span>}</div><div className="ws-day-row-summary"><span>{Math.floor(minutes/60).toLocaleString("fa-IR")}:{String(minutes%60).padStart(2,"0")} برنامه</span><span>{tests.toLocaleString("fa-IR")} تست</span><span>{items.length.toLocaleString("fa-IR")} فعالیت</span></div><div className="panel-row-actions"><button className="ws-copy" aria-label={`کپی ${persianDate(date)}`} disabled={!items.length || source || props.copyBusy} onClick={event => { event.stopPropagation(); if (day) props.onCopy(day); }}><PanelIcon name="copy"/></button><button className="ws-add" onClick={event => { event.stopPropagation(); props.onAdd(date); }}>＋ افزودن باکس</button>{hasExam && !hasPrep && <button className="ws-add" style={{borderColor:"#5B0FAD", color:"#5B0FAD", background:"#f6f1fb"}} onClick={event => { event.stopPropagation(); props.onAdd(date); }}>＋ باکس آمادگی آزمون</button>}</div></header>
     <div ref={viewport} className="timeline-viewport" aria-label={`خط زمانی ${persianDate(date)}`} tabIndex={0}>
       <div className="timeline-stage" style={{ width: width + MIN_CARD_WIDTH }}>
         <div ref={trackRef} className="timeline-track" data-time-track={date} data-time-scale={scale} style={{ width, height: trackHeight, minHeight: 44 + LANE_HEIGHT, backgroundImage: `repeating-linear-gradient(to left, transparent 0, transparent ${120 * scale - 1}px, #ece5f3 ${120 * scale - 1}px, #ece5f3 ${120 * scale}px)` }}>
@@ -117,6 +121,8 @@ export default function TimelineBoard(props: Props) {
     const rect = track.getBoundingClientRect();
     const x = !keyboard && pointer.current ? pointer.current.x : (event.active.rect.current.translated?.right || rect.right);
     const minutes = timeFromClientX(x,{right:rect.right,width:1440 * Number(track.dataset.timeScale)},itemDuration(item));
+    const originDate = (event.active.data.current?.date as string) || "";
+    if (isRevertToOrigin(item, originDate, date, minutes)) return {date, minutes, error: null};
     return {date,minutes,error:dropConflict(item,minutes,props.days.find(day=>day.date===date)?.items || [],props.commitments,date)};
   }
   return <DndContext sensors={sensors} collisionDetection={args => { const hits = pointerWithin(args); return hits.length ? hits : rectIntersection(args); }} autoScroll onDragStart={event => { const point = event.activatorEvent as PointerEvent; pointer.current=typeof point.clientX === "number" ? {x:point.clientX,y:point.clientY} : null; setActiveItem(event.active.data.current?.item as PlanItem); }} onDragMove={event=>setPreview(target(event))} onDragOver={event=>setPreview(target(event))} onDragCancel={()=>{setActiveItem(null);setPreview(null);}} onDragEnd={event=>{const destination=target(event);const item=event.active.data.current?.item as PlanItem;setActiveItem(null);setPreview(null);if(destination) void props.onDrop(item,destination);}} accessibility={{screenReaderInstructions:{draggable:"برای جابه‌جایی کلید فاصله را بزنید، با پیکان‌ها حرکت کنید و برای رها کردن دوباره فاصله را بزنید. Escape لغو می‌کند. انتقال به روز و ساعت دیگر از منوی فعالیت نیز در دسترس است."}}}>

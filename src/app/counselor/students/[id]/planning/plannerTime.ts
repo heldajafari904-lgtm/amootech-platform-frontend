@@ -69,10 +69,23 @@ export function dropConflict(item: PlanItem, minutes: number, items: PlanItem[],
   const end = minutes + itemDuration(item);
   if (end > 1439) return "این فعالیت پیش از پایان روز جا نمی‌شود.";
   const overlaps = (start: number, finish: number) => minutes < finish && end > start;
-  if (items.some(other => other.id !== item.id && other.start_time && overlaps(timeToMinutes(other.start_time), timeToMinutes(other.start_time) + itemDuration(other)))) return "این بازه با فعالیت دیگری تداخل دارد.";
+  if (items.some(other => other.id !== item.id && other.start_time && overlaps(timeToMinutes(other.start_time), timeToMinutes(other.start_time) + itemDuration(other)))) {
+    return "این بازه با فعالیت دیگری تداخل دارد.";
+  }
+  // Fixed-origin boxes (مدرسه / برنامه ثابت) are the materialized form of StudentFixedCommitment.
+  // Their old slot must be considered free after the box is moved, and reverting must not be
+  // blocked by the same commitment that created the box. Other PlanItem conflicts remain checked above.
+  if ((item.note as string) === "مدرسه" || (item.note as string) === "برنامه ثابت") return null;
   const weekday = (new Date(`${date}T12:00:00Z`).getUTCDay() + 6) % 7;
   if (commitments.some(commitment => commitment.active && commitment.weekday === weekday && overlaps(timeToMinutes(commitment.start_time), timeToMinutes(commitment.end_time)))) return "این زمان با برنامه ثابت دانش‌آموز تداخل دارد.";
   return null;
+}
+/** True if dropping item back to its original date/time - always allow, avoids false positive after scroll/jitter. */
+export function isRevertToOrigin(item: PlanItem, originDate: string, targetDate: string, targetMinutes: number | null): boolean {
+  if (targetMinutes === null) return false;
+  if (originDate !== targetDate) return false;
+  if (!item.start_time) return false;
+  return timeToMinutes(item.start_time) === targetMinutes;
 }
 export function tehranClock(now = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tehran", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);

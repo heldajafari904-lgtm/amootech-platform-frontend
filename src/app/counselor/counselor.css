@@ -138,6 +138,11 @@
 .counselor-panel .ws-box-review { background: #fffae9; border-color: #eddfa9; }
 .counselor-panel .ws-box-exam { background: #fff5e5; border-color: #edd3a8; }
 .counselor-panel .ws-box-event { background: #f7f6f8; border-color: var(--panel-border); }
+/* Fixed-schedule boxes injected into plan: مدرسه و برنامه ثابت — distinct palette */
+.counselor-panel .ws-box-fixed-school { background: #eef6ff; border-color: #b9d6f2; border-inline-start: 4px solid #2b7de9; }
+.counselor-panel .ws-box-fixed-school .ws-box-kind { background: #2b7de9; color: #fff; }
+.counselor-panel .ws-box-fixed { background: #f0fdf4; border-color: #b6e7c2; border-inline-start: 4px solid #22a06b; }
+.counselor-panel .ws-box-fixed .ws-box-kind { background: #22a06b; color: #fff; }
 .counselor-panel .ws-box-title { font-size: 14px; line-height: 1.6; white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; word-break: break-word; }
 .counselor-panel :is(.ws-box-kind, .ws-box-time, .ws-box-meta, .ws-box-sub, .ws-lock) { font-size: 12px; overflow-wrap: anywhere; word-break: break-word; white-space: normal; }
 .counselor-panel .ws-box-sub { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.5; }
@@ -232,3 +237,23 @@
 .panel-dashboard-metrics strong { font-size: 28px; color: var(--brand-purple); }
 .panel-dashboard-metrics span { font-size: 12px; color: var(--panel-muted); }
 @media (max-width: 600px) { .panel-dashboard-metrics { grid-template-columns: 1fr; } }
+
+.counselor-panel .ws-badge-exam { background: var(--brand-purple); color: white; }
+.counselor-panel .ws-day-row.is-exam { border-color: #c9a8ef; background: linear-gradient(180deg, #fdfaff 0%, #ffffff 100%); box-shadow: 0 0 0 1px #ece1fb inset; position: relative; overflow: hidden; }
+.counselor-panel .ws-day-row.is-exam.is-today { border-color: #c9a8ef; box-shadow: 0 0 0 2px #5B0FAD33, 0 0 0 1px #ece1fb inset; }
+.counselor-panel .ws-exam-ribbon { position: absolute; inset-block-start: 10px; inset-inline-start: -32px; width: 120px; transform: rotate(-35deg); background: var(--brand-purple); color: #fff; font-size: 11px; font-weight: 700; text-align: center; padding: 3px 0; box-shadow: 0 4px 10px #5b0fad2a; z-index: 2; pointer-events: none; }
+.counselor-panel .ws-exam-ribbon span { display: block; letter-spacing: .2px; }
+.counselor-panel .ws-exam-callout { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #5B0FAD; background: #f6f1fb; border: 1px dashed #d9c6ec; border-radius: 20px; padding: 3px 10px; animation: examPulse 1.6s ease-in-out infinite; }
+.counselor-panel .ws-exam-callout i { width: 16px; height: 16px; display: grid; place-items: center; background: var(--brand-purple); color: #fff; border-radius: 50%; font-size: 10px; font-style: normal; }
+@keyframes examPulse { 0%,100% { box-shadow: 0 0 0 0 #5B0FAD22; } 50% { box-shadow: 0 0 0 6px #5B0FAD11; } }
+.counselor-panel .ws-exam-side { position: absolute; inset-block: 0; inset-inline-start: 0; width: 6px; background: var(--brand-purple); opacity: .9; border-radius: 0 6px 6px 0; z-index: 1; pointer-events: none; display: grid; place-items: center; }
+.counselor-panel .ws-exam-side::after { content: "امتحان"; writing-mode: vertical-rl; text-orientation: mixed; font-size: 9px; font-weight: 800; color: #fff; letter-spacing: 1px; transform: rotate(180deg); }
+.counselor-panel .ws-exam-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--brand-purple); display: inline-block; box-shadow: 0 0 0 4px #ede0fa; animation: examPulse 1.6s ease-in-out infinite; flex-shrink: 0; }
+.counselor-panel .ws-wizard-steps { display: flex; gap: 8px; align-items: center; }
+.counselor-panel .ws-wizard-stepdot { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; border: 1px solid var(--panel-border); background: #fff; color: var(--panel-muted); }
+.counselor-panel .ws-wizard-stepdot.is-active { background: var(--brand-purple); color: #fff; border-color: var(--brand-purple); }
+.counselor-panel .ws-wizard-stepdot.is-done { background: #edf6ef; color: #23633c; border-color: #b6e7c2; }
+.counselor-panel .ws-choice-card { display: flex; gap: 12px; padding: 14px; border: 1px solid var(--panel-border); border-radius: 12px; background: #fff; cursor: pointer; text-align: start; align-items: center; }
+.counselor-panel .ws-choice-card.is-selected { border-color: var(--brand-purple); background: var(--panel-tint); box-shadow: 0 0 0 1px var(--brand-purple) inset; }
+.counselor-panel .ws-choice-card b { display: grid; width: 36px; height: 36px; border-radius: 10px; place-items: center; background: var(--panel-tint); color: var(--brand-purple); flex-shrink: 0; }
+.counselor-panel .ws-exam-grid button.is-active { background: var(--brand-purple) !important; color: #fff !important; border-color: var(--brand-purple) !important; }

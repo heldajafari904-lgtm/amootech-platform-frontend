@@ -31,6 +31,7 @@
 /* One day, one row, including flexible activities. */
 .timeline-activity { cursor: grab; touch-action: pan-x; }
 .timeline-activity:active { cursor: grabbing; }
+.timeline-day.is-exam { position: relative; }
 .counselor-panel .timeline-activity .ws-box { height: auto; min-height: 132px; display: flex; flex-direction: column; gap: 7px; overflow: visible; align-content: start; }
 .counselor-panel .timeline-activity .ws-box-title,
 .counselor-panel .timeline-activity .ws-box-sub { display: block; overflow: visible; white-space: normal; text-overflow: clip; overflow-wrap: anywhere; word-break: break-word; line-height: 1.5; }
