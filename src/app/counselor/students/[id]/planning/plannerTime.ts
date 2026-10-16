@@ -65,19 +65,22 @@ export function arrangeLanes(items: PlanItem[]) {
   });
   return { entries, lanes: 1, scale, width: Math.max(PLANNER_END * scale, edge) };
 }
-export function dropConflict(item: PlanItem, minutes: number, items: PlanItem[], commitments: Commitment[], date: string): string | null {
+export function dropConflict(item: PlanItem, minutes: number, items: PlanItem[], commitments: Commitment[], date: string, schoolSlots: { id: number; weekday: number; start_time?: string | null; end_time?: string | null }[] = []): string | null {
   const end = minutes + itemDuration(item);
   if (end > 1439) return "این فعالیت پیش از پایان روز جا نمی‌شود.";
   const overlaps = (start: number, finish: number) => minutes < finish && end > start;
   if (items.some(other => other.id !== item.id && other.start_time && overlaps(timeToMinutes(other.start_time), timeToMinutes(other.start_time) + itemDuration(other)))) {
     return "این بازه با فعالیت دیگری تداخل دارد.";
   }
-  // Fixed-origin boxes (مدرسه / برنامه ثابت) are the materialized form of StudentFixedCommitment.
-  // Their old slot must be considered free after the box is moved, and reverting must not be
-  // blocked by the same commitment that created the box. Other PlanItem conflicts remain checked above.
-  if ((item.note as string) === "مدرسه" || (item.note as string) === "برنامه ثابت") return null;
   const weekday = (new Date(`${date}T12:00:00Z`).getUTCDay() + 6) % 7;
-  if (commitments.some(commitment => commitment.active && commitment.weekday === weekday && overlaps(timeToMinutes(commitment.start_time), timeToMinutes(commitment.end_time)))) return "این زمان با برنامه ثابت دانش‌آموز تداخل دارد.";
+  if (commitments.some(commitment => commitment.active && commitment.weekday === weekday
+    && !(commitment.valid_from && date < commitment.valid_from) && !(commitment.valid_until && date > commitment.valid_until)
+    && !(item.fixed_source_type === "commitment" && item.fixed_source_id === commitment.id)
+    && !(commitment.kind === "SCHOOL" && schoolSlots.some(slot => slot.weekday === weekday && slot.start_time && slot.end_time))
+    && overlaps(timeToMinutes(commitment.start_time), timeToMinutes(commitment.end_time)))) return "این زمان با برنامه ثابت دانش‌آموز تداخل دارد.";
+  if (schoolSlots.some(slot => slot.weekday === weekday && slot.start_time && slot.end_time
+    && !(item.fixed_source_type === "school_slot" && item.fixed_source_id === slot.id)
+    && overlaps(timeToMinutes(slot.start_time), timeToMinutes(slot.end_time)))) return "این زمان با برنامه مدرسه دانش‌آموز تداخل دارد.";
   return null;
 }
 /** True if dropping item back to its original date/time - always allow, avoids false positive after scroll/jitter. */

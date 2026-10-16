@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { DndContext, DragOverlay, PointerSensor, TouchSensor, KeyboardSensor, useSensor, useSensors, useDraggable, useDroppable, pointerWithin, rectIntersection, type DragEndEvent, type DragMoveEvent } from "@dnd-kit/core";
-import { persianDate, type PlanItem, type PlanDay, type Commitment } from "@/lib/planning";
+import { persianDate, type PlanItem, type PlanDay, type Commitment, type SchoolSlot } from "@/lib/planning";
 import { PanelIcon } from "@/components/counselor/PanelUI";
 import PlanActivityCard from "./PlanActivityCard";
 import { arrangeLanes, dropConflict, isRevertToOrigin, itemDuration, LANE_HEIGHT, MIN_CARD_WIDTH, minutesToTime, PLANNER_END, PLANNER_START, PIXELS_PER_MINUTE, SNAP_MINUTES, tehranClock, timeFromClientX } from "./plannerTime";
@@ -17,7 +17,7 @@ const EMPTY_ITEMS: PlanItem[] = [];
 type Actions = { onEdit: (item: PlanItem) => void; onDelete: (item: PlanItem) => void; onDuplicate: (item: PlanItem) => void; onMoveMenu: (item: PlanItem, date: string) => void };
 type Target = { date: string; minutes: number | null; ordering?: number; error?: string | null };
 type Props = Actions & {
-  dates: string[]; days: PlanDay[]; commitments: Commitment[]; pending: Set<number>; examDates?: string[];
+  dates: string[]; days: PlanDay[]; commitments: Commitment[]; schoolSlots: SchoolSlot[]; pending: Set<number>; examDates?: string[];
   copyDate: string | null; copyBusy: boolean;
   onCopy: (day: PlanDay) => void; onCopyTarget: (date: string, day: PlanDay | null) => void;
   onAdd: (date: string) => void; onDrop: (item: PlanItem, target: Target) => Promise<void>;
@@ -123,7 +123,7 @@ export default function TimelineBoard(props: Props) {
     const minutes = timeFromClientX(x,{right:rect.right,width:1440 * Number(track.dataset.timeScale)},itemDuration(item));
     const originDate = (event.active.data.current?.date as string) || "";
     if (isRevertToOrigin(item, originDate, date, minutes)) return {date, minutes, error: null};
-    return {date,minutes,error:dropConflict(item,minutes,props.days.find(day=>day.date===date)?.items || [],props.commitments,date)};
+    return {date,minutes,error:dropConflict(item,minutes,props.days.find(day=>day.date===date)?.items || [],props.commitments,date,props.schoolSlots)};
   }
   return <DndContext sensors={sensors} collisionDetection={args => { const hits = pointerWithin(args); return hits.length ? hits : rectIntersection(args); }} autoScroll onDragStart={event => { const point = event.activatorEvent as PointerEvent; pointer.current=typeof point.clientX === "number" ? {x:point.clientX,y:point.clientY} : null; setActiveItem(event.active.data.current?.item as PlanItem); }} onDragMove={event=>setPreview(target(event))} onDragOver={event=>setPreview(target(event))} onDragCancel={()=>{setActiveItem(null);setPreview(null);}} onDragEnd={event=>{const destination=target(event);const item=event.active.data.current?.item as PlanItem;setActiveItem(null);setPreview(null);if(destination) void props.onDrop(item,destination);}} accessibility={{screenReaderInstructions:{draggable:"برای جابه‌جایی کلید فاصله را بزنید، با پیکان‌ها حرکت کنید و برای رها کردن دوباره فاصله را بزنید. Escape لغو می‌کند. انتقال به روز و ساعت دیگر از منوی فعالیت نیز در دسترس است."}}}>
     <div className="ws-stack">{props.dates.map(date=><TimelineDay key={date} date={date} day={props.days.find(day=>day.date===date)} clock={clock} preview={preview} props={props}/>)}</div>

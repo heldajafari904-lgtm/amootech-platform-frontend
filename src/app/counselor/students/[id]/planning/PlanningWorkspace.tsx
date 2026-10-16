@@ -275,31 +275,29 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
   // load plan detail
   const refresh = useCallback(async (id = planId) => {
     if (!id) return;
+
+    const before = planRef.current;
     const p = await client.getPlan(id);
-    if (planRef.current && planRef.current.id !== id) return;
-    // try restore draft cache if exists and fresher
-    const key = `draft:plan:${id}`;
-    try{
-      const raw = localStorage.getItem(key);
-      if(raw){
-        const draft = JSON.parse(raw) as Plan;
-        if((draft as unknown as {updated_at?:string}).updated_at && (p as unknown as {updated_at?:string}).updated_at && (draft as unknown as {updated_at:string}).updated_at >= (p as unknown as {updated_at:string}).updated_at){
-          setPlan(draft); setPlans((cur) => cur.map((x) => (x.id === id ? draft : x))); setExamDates((draft as unknown as {exam_dates?: string[]}).exam_dates||[]); setHasDraft(true); return;
-        } else localStorage.removeItem(key);
-      }
-    }catch{}
+
+    if (planRef.current !== before || (planRef.current && planRef.current.id !== id)) return;
+
     setPlan(p);
-    setExamDates((p as unknown as {exam_dates?: string[]}).exam_dates||[]);
-    setPlans((cur) => cur.map((x) => (x.id === id ? p : x)));
+    setExamDates(
+      (p as unknown as { exam_dates?: string[] }).exam_dates || []
+    );
+    setPlans((cur) =>
+      cur.map((x) => (x.id === id ? p : x))
+    );
   }, [client, planId, setPlan]);
 
   // Live resync: when fixed-schedule panel saved school slots, patch the open plan without full reload flicker
   useEffect(()=>{
     const handler = (ev: Event) => {
-      const detail = (ev as CustomEvent).detail as { planId: number; created?: number } | undefined;
-      const id = detail?.planId ?? planRef.current?.id ?? planId;
-      if(!id) return;
-      refresh(id).then(()=> notify(setNotice, "برنامه با برنامه مدرسه همگام شد.")).catch(()=>{});
+      const detail = (ev as CustomEvent).detail as { planId: number; plan: Plan } | undefined;
+      if (!detail?.plan) return;
+      if (planRef.current?.id === detail.planId) setPlan(detail.plan);
+      setPlans(current => current.map(plan => plan.id === detail.planId ? detail.plan : plan));
+      notify(setNotice, "برنامه با برنامه‌های ثابت همگام شد.");
     };
     window.addEventListener("plan:fixed-resynced" as unknown as string, handler as EventListener);
     return ()=> window.removeEventListener("plan:fixed-resynced" as unknown as string, handler as EventListener);
@@ -308,8 +306,9 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
   useEffect(() => {
     if (!planId) return;
     let live = true;
+    const before = planRef.current;
     api<Plan>(`/planning/plans/${planId}/`, token)
-      .then((p) => { if (live) { setPlan(p); setExamDates((p as unknown as {exam_dates?: string[]}).exam_dates||[]); } })
+      .then((p) => { if (live && planRef.current === before) { setPlan(p); setExamDates((p as unknown as {exam_dates?: string[]}).exam_dates||[]); } })
       .catch((r) => { if (live) setError(apiErrorMessage(r)); });
     return () => { live = false; };
   }, [planId, token, setPlan]);
@@ -423,14 +422,21 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
     try {
       await perform(`item:${item.id}`, async () => {
         const snapshot = planRef.current; if (!snapshot) return;
+        const originalDay = snapshot.days?.find(day => day.items.some(entry => entry.id === item.id));
+        const originalItem = originalDay?.items.find(entry => entry.id === item.id) || item;
         const day = await ensureDay(target.date); if (!day) return;
         setPendingWrites(count => count + 1); setError("");
         const moved = { ...item, plan_day: day.id, start_time: start, end_time: end, planned_duration_minutes: duration, ordering: target.ordering ?? day.items.length };
         setPlan(previous => previous?.id === snapshot.id ? { ...previous, days: previous.days?.map(entry => ({ ...entry, items: [...entry.items.filter(old => old.id !== item.id), ...(entry.id === day.id ? [moved] : [])] })) } : previous);
         try {
           const canonical = await client.moveItem(item.id, { target_day: day.id, start_time: start, end_time: end, planned_duration_minutes: duration, ordering: target.ordering });
-          await canonicalItem(canonical); setHasSaved(true); setSaveFailed(false); notify(setNotice, "فعالیت جابه‌جا شد.");
-        } catch (reason) { if (planRef.current?.id === snapshot.id) setPlan(snapshot); setSaveFailed(true); throw reason; }
+          setPlan(previous => previous?.id === snapshot.id ? { ...previous, days: previous.days?.map(entry => ({ ...entry, items: [...entry.items.filter(old => old.id !== item.id), ...(entry.id === canonical.plan_day ? [canonical] : [])] })) } : previous);
+          if (canonical.fixed_source_type) void refreshFixed();
+          setHasSaved(true); setSaveFailed(false); notify(setNotice, "فعالیت جابه‌جا شد.");
+        } catch (reason) {
+          setPlan(previous => previous?.id === snapshot.id ? { ...previous, days: previous.days?.map(entry => ({ ...entry, items: [...entry.items.filter(old => old.id !== item.id), ...(entry.id === originalDay?.id ? [originalItem] : [])] })) } : previous);
+          setSaveFailed(true); throw reason;
+        }
         finally { setPendingWrites(count => count - 1); }
       });
     } catch (reason) { setError(`${apiErrorMessage(reason)} تغییرات برگردانده شد.`); }
@@ -561,7 +567,7 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
       )}
       <section style={{ display: "grid", gap: 8 }}>
         <button onClick={() => setFixedOpen(v => !v)} style={{ justifySelf: "start", border: "1px solid #e7e1ec", background: fixedOpen ? "#f6f1fb" : "white", color: fixedOpen ? "#5B0FAD" : "#16041E", borderRadius: 8, padding: "8px 14px", fontWeight: 700 }}>{fixedOpen ? "بستن برنامه‌های ثابت" : "مدیریت برنامه‌های ثابت (مدرسه و کلاس‌ها)"}</button>
-        {fixedOpen && <FixedSchedulePanel token={token} studentId={studentId} commitments={commitments} schoolSlots={schoolSlots} onRefresh={refreshFixed} />}
+        {fixedOpen && <FixedSchedulePanel token={token} studentId={studentId} commitments={commitments} schoolSlots={schoolSlots} onRefresh={refreshFixed} planId={planId ?? undefined} />}
       </section>
       {/* New plan modal (no longer always visible) */}
       {showNewPlan && (
@@ -635,7 +641,7 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
             <button aria-pressed={!selectedDay} className={!selectedDay ? "is-active" : ""} onClick={() => setSelectedDay(null)}>همه روزها</button>
           </nav>
 
-          <TimelineBoard dates={days.filter(date => !selectedDay || date === selectedDay)} days={plan.days || []} commitments={activeCommitments} pending={new Set([...actionKeys].filter(key => key.startsWith("item:")).map(key => Number(key.split(":")[1])))} copyDate={copySource?.date || null} copyBusy={copyBusy} onCopy={startCopy} onCopyTarget={(date,day) => { void handleCopyTargetClick(date,day); }} onAdd={date => { void addToDay(date); }} onDrop={transfer} onEdit={setEditingItem} onDelete={setDeleteTarget} onDuplicate={item => { void handleDuplicate(item); }} onMoveMenu={(item,date) => { setMoveItem(item); setMoveTarget(date); setMoveTime(item.start_time?.slice(0,5) || "06:00"); setMoveUnscheduled(!item.start_time); }}/>
+          <TimelineBoard dates={days.filter(date => !selectedDay || date === selectedDay)} days={plan.days || []} commitments={activeCommitments} schoolSlots={schoolSlots} pending={new Set([...actionKeys].filter(key => key.startsWith("item:")).map(key => Number(key.split(":")[1])))} copyDate={copySource?.date || null} copyBusy={copyBusy} onCopy={startCopy} onCopyTarget={(date,day) => { void handleCopyTargetClick(date,day); }} onAdd={date => { void addToDay(date); }} onDrop={transfer} onEdit={setEditingItem} onDelete={setDeleteTarget} onDuplicate={item => { void handleDuplicate(item); }} onMoveMenu={(item,date) => { setMoveItem(item); setMoveTarget(date); setMoveTime(item.start_time?.slice(0,5) || "06:00"); setMoveUnscheduled(!item.start_time); }}/>
 
         </>
       )}

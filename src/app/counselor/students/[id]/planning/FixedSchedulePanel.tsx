@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import { commitmentLabel, type Commitment, type SchoolSlot, WEEKDAY_ORDER } from "@/lib/planning";
+import { applyStudentFixed, commitmentLabel, type Commitment, type SchoolSlot, WEEKDAY_ORDER } from "@/lib/planning";
 import { planningApi } from "./planningApi";
 import { apiErrorMessage } from "./planningFeedback";
+import ApplyFixedButton from "./ApplyFixedButton";
 import { IconButton } from "@/components/counselor/PanelUI";
 
 const WEEKDAY_LABEL: Record<number, string> = { 5: "شنبه", 6: "یکشنبه", 0: "دوشنبه", 1: "سه‌شنبه", 2: "چهارشنبه", 3: "پنج‌شنبه", 4: "جمعه" };
@@ -21,7 +22,7 @@ function durationLabel(mins:number){ if(mins===90) return "۹۰ دقیقه"; if(
 type FixedEvent = { id: number; student: number; title: string; date: string; start_time: string; end_time: string; active: boolean };
 const DAY_TABS = WEEKDAY_ORDER as unknown as number[];
 
-export default function FixedSchedulePanel({ token, studentId, commitments, schoolSlots, onRefresh }: { token: string; studentId: string; commitments: Commitment[]; schoolSlots: SchoolSlot[]; onRefresh: () => void }) {
+export default function FixedSchedulePanel({ token, studentId, commitments, schoolSlots, onRefresh: refreshSources, planId }: { token: string; studentId: string; commitments: Commitment[]; schoolSlots: SchoolSlot[]; onRefresh: () => void | Promise<void>; planId?: number }) {
   const client = useMemo(() => planningApi(token), [token]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -53,6 +54,15 @@ export default function FixedSchedulePanel({ token, studentId, commitments, scho
   const [weekdays, setWeekdays] = useState<number[]>([]);
   const [start, setStart] = useState("18:00");
   const [end, setEnd] = useState("20:00");
+
+  async function onRefresh() {
+    await refreshSources();
+    try {
+      const result = await applyStudentFixed(token, sid, planId);
+      const conflicts = result.skipped.filter(item => item.reason === "conflict").length;
+      setResyncNote(conflicts ? `برنامه همگام شد؛ ${conflicts} مورد به‌دلیل تداخل اضافه نشد.` : "برنامه با تغییرات همگام شد.");
+    } catch (error) { setError(`تغییرات ثابت ذخیره شد؛ ${apiErrorMessage(error)}`); }
+  }
 
   function notify(msg:string){ setNotice(msg); setTimeout(()=>setNotice(""),2500); }
 
@@ -111,7 +121,6 @@ export default function FixedSchedulePanel({ token, studentId, commitments, scho
         if(!confirm(`${WEEKDAY_LABEL[day]} از روزهای مدرسه حذف شود؟ (زنگ‌ها نیز حذف می‌شوند)`)) return;
         // optimistic: clear locally so plan feels instant; then sync
         const prevSlots = [...schoolSlots];
-        const prevCommits = [...commitments];
         // immediate local prune for snappy UI (will be corrected by refresh)
         // do delete on server
         await api<void>(`/planning/commitments/${c.id}/`, token, "DELETE");
@@ -119,19 +128,7 @@ export default function FixedSchedulePanel({ token, studentId, commitments, scho
         for(const s of slotsToClear) await api<void>(`/planning/school-slots/${s.id}/`, token, "DELETE").catch(()=>{});
         setSlotsDraft([{period:1, subject_name:"", start_time:"07:30", end_time:"09:00"}]);
         await onRefresh();
-        // also sync open DRAFT plan: remove مدرسه boxes for that weekday that are still deletable
-        try {
-          const { allPages } = await import("@/lib/api");
-          const plans = await allPages<{id:number; status:string}>(`/planning/plans/?student=${sid}`, token);
-          const draft = plans.find(p=> p.status==="DRAFT");
-          if(draft){
-            const r = await api<{plan: unknown; created:number; removed:number}>(`/planning/plans/${draft.id}/apply-fixed/`, token, "POST", {});
-            try { window.dispatchEvent(new CustomEvent("plan:fixed-resynced", { detail: { planId: draft.id, created: r.created, removed: r.removed }})); } catch {}
-            notify(r.removed ? `این روز از مدرسه حذف و ${r.removed} باکس از برنامه پاک شد.` : "روز از مدرسه حذف شد.");
-          } else {
-            notify("روز از مدرسه حذف شد.");
-          }
-        } catch {}
+        notify("روز از مدرسه حذف شد.");
       } else {
         await client.schoolHours({student:sid, weekdays:[day], start_time:"07:30", end_time:"13:30", title:"مدرسه"});
         await onRefresh();
@@ -195,22 +192,6 @@ function applySequential(list:{period:number; subject_name:string; start_time:st
       for(const s of toDelete) if(!keep.has(s.period)) await api<void>(`/planning/school-slots/${s.id}/`, token, "DELETE");
       await client.bulkSchoolSlots({student:sid, slots: filled as never});
       notify("زنگ‌ها ذخیره شد."); await onRefresh();
-      // in-the-moment sync: if a plan is open for this student, resync its fixed boxes so school change appears live
-      setResyncNote("");
-      try {
-        const { allPages } = await import("@/lib/api");
-        const plans = await allPages<{id:number; status:string}>(`/planning/plans/?student=${sid}`, token);
-        const draft = plans.find(p=> p.status==="DRAFT");
-        if(draft){
-          const r = await api<{plan: unknown; created:number; removed:number; skipped:{date:string;title:string;reason:string}[]}>(`/planning/plans/${draft.id}/apply-fixed/`, token, "POST", {});
-          const conflicts = r.skipped.filter(s=> s.reason==="conflict");
-          setResyncNote(conflicts.length ? `زنگ‌ها در برنامه اعمال شد — ${conflicts.length} مورد به‌دلیل تداخل اضافه نشد.` : r.created || r.removed ? "برنامه با زنگ‌های جدید همگام شد." : "");
-          await onRefresh();
-          // soft notify parent to refresh plan detail if it watches studentId change - emit via onRefresh already; parent will pick up on next plan refresh if needed
-          // also dispatch a lightweight event for workspace to react if mounted
-          try { window.dispatchEvent(new CustomEvent("plan:fixed-resynced", { detail: { planId: draft.id, created: r.created }})); } catch {}
-        }
-      } catch {}
     }catch(e){ setError(apiErrorMessage(e)); } finally{ setSaving(false); }
   }
 
@@ -257,6 +238,7 @@ function applySequential(list:{period:number; subject_name:string; start_time:st
 
   return (
     <section style={{background:"white", border:"1px solid #e7e1ec", borderRadius:12, padding:12, display:"grid", gap:12}} dir="rtl">
+      <ApplyFixedButton token={token} studentId={sid} planId={planId} onApplied={refreshSources} />
       <div style={{display:"flex", gap:8, alignItems:"center"}}>
         <button onClick={()=>setSection("school")} style={{padding:"6px 12px", borderRadius:8, border: section==="school"?"1px solid #5B0FAD":"1px solid #e7e1ec", background: section==="school"?"#f6f1fb":"white", color: section==="school"?"#5B0FAD":"#16041E"}}>برنامه مدرسه</button>
         <button onClick={()=>setSection("events")} style={{padding:"6px 12px", borderRadius:8, border: section==="events"?"1px solid #5B0FAD":"1px solid #e7e1ec", background: section==="events"?"#f6f1fb":"white", color: section==="events"?"#5B0FAD":"#16041E"}}>رویدادها و فعالیت‌ها</button>
@@ -342,7 +324,7 @@ function applySequential(list:{period:number; subject_name:string; start_time:st
             <label style={{display:"grid", gap:4, fontSize:11}}>پایان<input type="time" value={evEnd} onChange={e=>setEvEnd(e.target.value)} /></label>
             <button onClick={submitEvent} style={{background:"#5B0FAD", color:"white", borderRadius:8, padding:"6px 12px", fontSize:12}}>ثبت برای {WEEKDAY_LABEL[evDay]}</button>
           </div>
-          {dayEvents.length>0 && <div style={{display:"grid", gap:6}}>{dayEvents.map(ev=> <div key={ev.id} style={{display:"flex", justifyContent:"space-between", gap:6, border:"1px solid #e7e1ec", borderRadius:6, padding:"6px 8px", fontSize:12}}><span>{ev.title} · {ev.start_time.slice(0,5)}-{ev.end_time.slice(0,5)}</span><IconButton icon="trash" label="حذف رویداد" variant="danger" onClick={async()=>{ if(confirm("حذف شود؟")){ await api(`/planning/fixed-events/${ev.id}/`, token, "DELETE"); setEvents(events.filter(x=>x.id!==ev.id));}}} /></div>)}</div>}
+          {dayEvents.length>0 && <div style={{display:"grid", gap:6}}>{dayEvents.map(ev=> <div key={ev.id} style={{display:"flex", justifyContent:"space-between", gap:6, border:"1px solid #e7e1ec", borderRadius:6, padding:"6px 8px", fontSize:12}}><span>{ev.title} · {ev.start_time.slice(0,5)}-{ev.end_time.slice(0,5)}</span><IconButton icon="trash" label="حذف رویداد" variant="danger" onClick={async()=>{ if(confirm("حذف شود؟")){ await api(`/planning/fixed-events/${ev.id}/`, token, "DELETE"); setEvents(events.filter(x=>x.id!==ev.id)); await onRefresh();}}} /></div>)}</div>}
 
           <div style={{display:"grid", gap:6, background:"#faf9fc", border:"1px solid #e7e1ec", borderRadius:8, padding:8}}>
             <strong style={{fontSize:12}}>فعالیت تکرارشونده (مثل باشگاه)</strong>
@@ -350,7 +332,7 @@ function applySequential(list:{period:number; subject_name:string; start_time:st
             <div style={{display:"flex", flexWrap:"wrap", gap:4}}>{DAY_TABS.map(wd=> <button key={wd} onClick={()=> setWeekdays(v=> v.includes(wd)? v.filter(x=>x!==wd): [...v, wd])} style={{padding:"4px 8px", borderRadius:6, border: weekdays.includes(wd)?"1px solid #5B0FAD":"1px solid #e7e1ec", background: weekdays.includes(wd)?"#f6f1fb":"white", fontSize:11}}>{WEEKDAY_LABEL[wd]}</button>)}</div>
             <div style={{display:"flex", gap:6}}><input type="time" value={start} onChange={e=>setStart(e.target.value)} /><input type="time" value={end} onChange={e=>setEnd(e.target.value)} /><button onClick={submitRecurring} style={{background:"#5B0FAD", color:"white", borderRadius:6, padding:"6px 12px", fontSize:12}}>ثبت</button></div>
           </div>
-          {grouped.length>0 && <div style={{display:"grid", gap:6}}>{grouped.map(g=>{ const rep=g[0]; return <div key={rep.group_id||rep.id} style={{display:"flex", justifyContent:"space-between", gap:6, border:"1px solid #e7e1ec", borderRadius:6, padding:"6px 8px", fontSize:11, opacity: rep.active?1:0.6}}><span>{rep.title} · {g.map(c=>WEEKDAY_LABEL[c.weekday]).join("، ")} {rep.start_time.slice(0,5)}-{rep.end_time.slice(0,5)} · {commitmentLabel[rep.kind]}</span><IconButton icon="trash" label="حذف" variant="danger" onClick={async()=>{ if(confirm("حذف شود؟")){ if(rep.group_id) await client.groupDelete(rep.group_id); else await api<void>(`/planning/commitments/${rep.id}/`, token, "DELETE"); onRefresh();}}} /></div>;})}</div>}
+          {grouped.length>0 && <div style={{display:"grid", gap:6}}>{grouped.map(g=>{ const rep=g[0]; return <div key={rep.group_id||rep.id} style={{display:"flex", justifyContent:"space-between", gap:6, border:"1px solid #e7e1ec", borderRadius:6, padding:"6px 8px", fontSize:11, opacity: rep.active?1:0.6}}><span>{rep.title} · {g.map(c=>WEEKDAY_LABEL[c.weekday]).join("، ")} {rep.start_time.slice(0,5)}-{rep.end_time.slice(0,5)} · {commitmentLabel[rep.kind]}</span><IconButton icon="trash" label="حذف" variant="danger" onClick={async()=>{ if(confirm("حذف شود؟")){ if(rep.group_id) await client.groupDelete(rep.group_id); else await api<void>(`/planning/commitments/${rep.id}/`, token, "DELETE"); await onRefresh();}}} /></div>;})}</div>}
         </div>
       )}
     </section>

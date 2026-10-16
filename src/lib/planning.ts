@@ -46,6 +46,8 @@ export type PlanItem = {
   start_time: string | null;
   end_time: string | null;
   note: string;
+  fixed_source_type?: "school_slot" | "commitment" | "event" | "";
+  fixed_source_id?: number | null;
   subject: number | null;
   subject_name?: string;
   chapter: number | null;
@@ -307,4 +309,17 @@ export function planningError(reason: unknown) {
     }
   } catch { /* plain text */ }
   return (reason as Error).message;
+}
+
+// Prefer the selected draft, then the current week, then the latest draft.
+export async function applyStudentFixed(token: string, studentId: number, preferredPlanId?: number) {
+  const { api, allPages } = await import("@/lib/api");
+  const plans = await allPages<Plan>(`/planning/plans/?student=${studentId}`, token);
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tehran", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const drafts = plans.filter(plan => plan.status === "DRAFT");
+  const draft = drafts.find(plan => plan.id === preferredPlanId) || drafts.find(plan => plan.start_date <= today && plan.end_date >= today) || drafts[0];
+  if (!draft) throw new Error("برنامه هفتگی پیش‌نویس وجود ندارد؛ ابتدا یک برنامه پیش‌نویس بسازید.");
+  const result = await api<{ plan: Plan; created: number; removed: number; skipped: { reason: string }[] }>(`/planning/plans/${draft.id}/apply-fixed/`, token, "POST", {});
+  window.dispatchEvent(new CustomEvent("plan:fixed-resynced", { detail: { planId: draft.id, plan: result.plan } }));
+  return result;
 }
