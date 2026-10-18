@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { clearSession, errorMessage, obtainTokenPair, Page, publicApi, saveSession } from "@/lib/api";
 
 type Option = { id: number; name: string; grade?: number };
-const empty = { username: "", password: "", email: "", first_name: "", last_name: "", grade: "", field: "", school_name: "" };
+const empty = { username: "", password: "", email: "", first_name: "", last_name: "", grade: "", field: "", school_name: "", mobile: "" };
 
 export default function StudentRegistration() {
   const router = useRouter();
@@ -43,6 +43,7 @@ export default function StudentRegistration() {
     <label>Grade<select required value={form.grade} onChange={(e) => { setFields([]); setForm({ ...form, grade: e.target.value, field: "" }); }}><option value="">Select grade</option>{grades.map((grade) => <option key={grade.id} value={grade.id}>{grade.name}</option>)}</select></label>
     <label>Field<select required value={form.field} onChange={(e) => setForm({ ...form, field: e.target.value })}><option value="">Select field</option>{fields.map((field) => <option key={field.id} value={field.id}>{field.name}</option>)}</select></label>
     <label>School (optional)<input value={form.school_name} onChange={(e) => setForm({ ...form, school_name: e.target.value })}/></label>
+    <label>شماره موبایل (اختیاری؛ نیازمند تأیید پس از ثبت‌نام)<input type="tel" dir="ltr" inputMode="tel" maxLength={20} value={form.mobile} onChange={e => setForm({ ...form, mobile: e.target.value })}/></label>
     <button disabled={busy}>{busy ? "Creating…" : "Create account"}</button>
   </form><p role="alert">{error}</p><Link href="/student/profile">Already registered? Sign in</Link></main>;
 }

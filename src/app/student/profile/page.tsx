@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { accessToken, api, clearSession, errorMessage, obtainTokenPair, onSessionExpired, Page, publicApi, saveSession, SESSION_EXPIRED, User } from "@/lib/api";
 
+import MobileVerification from "@/components/accounts/MobileVerification";
+
 type Option = { id: number; name: string };
 type Profile = { id: number; user: User; grade: number; field: number; school_name: string; counselor_user: User | null };
 
@@ -46,7 +48,7 @@ export default function StudentProfilePage() {
   }
 
   if (!token || !profile) return <main className="student-page"><h1>Student sign in</h1><form onSubmit={signIn}><label>Username<input required value={username} onChange={(e) => setUsername(e.target.value)}/></label><label>Password<input required type="password" value={password} onChange={(e) => setPassword(e.target.value)}/></label><button>Sign in</button></form><p role="alert">{error}</p><Link href="/register/student">Create an account</Link></main>;
-  return <main className="student-page"><h1>My profile</h1><p>Username: {profile.user.username}</p><p>Counselor: {profile.counselor_user ? `${profile.counselor_user.first_name} ${profile.counselor_user.last_name}`.trim() || profile.counselor_user.username : "Not assigned"}</p><form onSubmit={save}>
+  return <main className="student-page"><h1>پروفایل من</h1><MobileVerification token={token}/><p>Username: {profile.user.username}</p><p>Counselor: {profile.counselor_user ? `${profile.counselor_user.first_name} ${profile.counselor_user.last_name}`.trim() || profile.counselor_user.username : "Not assigned"}</p><form onSubmit={save}>
     <label>First name<input value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })}/></label>
     <label>Last name<input value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })}/></label>
     <label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}/></label>

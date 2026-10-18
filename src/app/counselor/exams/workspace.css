@@ -1,0 +1,27 @@
+.counselor-exam-workspace .exam-workspace-filters { border: 1px solid var(--exam-border); border-radius: 12px; background: white; padding: 14px 18px; }
+.exam-workspace-filters > summary { cursor: pointer; color: var(--exam-brand); font-size: 13px; }
+.exam-filter-controls { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; margin-top: 14px; align-items: end; }
+.exam-filter-controls label { display: grid; gap: 7px; min-width: 0; font-size: 12px; color: var(--exam-muted); }
+.exam-filter-controls :is(input,select) { min-width: 0; width: 100%; border: 1px solid var(--exam-border); background: #fefcfe; border-radius: 9px; padding: 10px; font: inherit; color: #24162d; }
+.exam-action-center ul { list-style: none; padding: 0; margin: 10px 0 0; max-height: 280px; overflow-y: auto; }
+.exam-action-center li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--exam-border); }
+.exam-action-center li > div:first-child { min-width: 0; flex: 1 1 220px; overflow-wrap: anywhere; }
+.exam-action-center strong { font-size: 13px; }
+.exam-action-center .exam-card-person { margin-top: 6px; }
+.exam-creation-student { align-items: end; margin-top: 18px !important; }
+.exam-creation-step-title { margin: 22px 0 0; font-size: 14px; }
+.counselor-exam-workspace .exam-details-dialog { width: min(100%,720px); }
+.exam-details-dialog h2 { overflow-wrap: anywhere; }
+.exam-details-dialog .exam-badge { display: inline-block; margin-top: 12px; }
+.exam-details-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; margin: 24px 0; }
+.exam-details-fields div { min-width: 0; }
+.exam-details-fields dt { font-size: 12px; color: var(--exam-muted); }
+.exam-details-fields dd { margin: 6px 0 0; overflow-wrap: anywhere; font-size: 14px; }
+@media(max-width:900px) { .exam-filter-controls { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media(max-width:600px) {
+  .exam-filter-controls { grid-template-columns: minmax(0,1fr); }
+  .exam-action-center li > .exam-actions { width: 100%; }
+  .exam-details-fields { grid-template-columns: minmax(0,1fr); }
+  .counselor-exam-workspace .exam-dialog-backdrop { padding: 10px; }
+  .counselor-exam-workspace .exam-details-dialog { max-height: calc(100dvh - 20px); padding: 18px; }
+}

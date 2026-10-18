@@ -1,0 +1,19 @@
+.student-exam-center .student-exam-steps { display: flex; flex-wrap: wrap; gap: 12px; list-style: none; margin: 12px 0 0; padding: 0; grid-column: 1/-1; }
+.student-exam-steps li { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--exam-muted); }
+.student-exam-steps li span { border: 1px solid var(--exam-border); border-radius: 50%; width: 25px; height: 25px; display: grid; place-items: center; }
+.student-exam-steps li[aria-current="step"] { color: var(--exam-brand); font-weight: 700; }
+.student-exam-steps li[aria-current="step"] span { background: #f1e8fa; border-color: #cbb2e4; }
+.student-practice-form h3 { font-size: 15px; margin: 4px 0; }
+.student-practice-review { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; margin: 0; }
+.student-practice-review div { min-width: 0; }
+.student-practice-review dt { color: var(--exam-muted); font-size: 12px; }
+.student-practice-review dd { margin: 6px 0 0; line-height: 1.9; overflow-wrap: anywhere; font-size: 14px; }
+.student-exam-center .exam-answer-details summary { color: var(--exam-brand); font-size: 13px; padding: 10px 0; cursor: pointer; }
+.student-exam-center .exam-mode .exam-badge { display: inline-block; margin-top: 10px; }
+.student-exam-center .exam-mode button:disabled { cursor: not-allowed; }
+@media(max-width:600px) {
+  .student-practice-review { grid-template-columns: minmax(0,1fr); }
+  .student-exam-center .exam-section-nav button { flex: 1 1 40%; }
+  .student-exam-center .exam-dialog-backdrop { padding: 10px; }
+  .student-exam-center .exam-dialog { max-height: calc(100dvh - 20px); }
+}

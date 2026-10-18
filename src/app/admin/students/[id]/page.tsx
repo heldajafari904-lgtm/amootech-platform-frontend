@@ -1,5 +1,7 @@
 "use client";
 
+import StudentMobileStatus from "@/components/accounts/StudentMobileStatus";
+
 import { useSyncExternalStore, useState, useEffect, useCallback } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { accessToken, api, onSessionExpired, errorMessage } from "@/lib/api";
@@ -95,7 +97,7 @@ export default function AdminStudentDetail() {
     </div>}
     {tab==="telegram" && <div className="admin-card"><TelegramControl studentId={String(id)} token={token} /></div>}
     {tab==="profile" && <div className="admin-card">
-      <h2>پروفایل</h2>
+      <h2>پروفایل</h2><StudentMobileStatus token={token} studentId={id}/>
       <div style={{display:"grid", gap:".4rem", fontSize:".85rem"}}>
         <div>نام کاربری: {student.user.username}</div>
         <div>ایمیل: {student.user.email || "—"}</div>

@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "incremental": false },
+  "include": [
+    "next-env.d.ts",
+    "src/components/accounts/**/*.ts",
+    "src/components/accounts/**/*.tsx",
+    "src/app/student/profile/**/*.tsx",
+    "src/app/register/student/**/*.tsx",
+    "src/app/student/exams/**/*.tsx",
+    "src/app/admin/students/**/*.tsx",
+    "src/app/counselor/students/page.tsx",
+    "src/app/counselor/students/[id]/student-detail.tsx"
+  ],
+  "exclude": ["node_modules", ".next"]
+}

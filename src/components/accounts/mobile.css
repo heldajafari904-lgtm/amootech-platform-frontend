@@ -1,0 +1,7 @@
+.student-mobile-panel { display: grid; gap: .75rem; min-width: 0; }
+.student-mobile-panel form, .student-mobile-panel fieldset { display: grid; gap: .75rem; min-width: 0; }
+.student-mobile-panel fieldset { border: 0; padding: 0; margin: 0; }
+.student-mobile-panel label { display: grid; gap: .35rem; }
+.student-mobile-panel input { width: 100%; max-width: 30rem; box-sizing: border-box; }
+.student-mobile-panel button { justify-self: start; }
+.student-mobile-panel small { color: #475569; }

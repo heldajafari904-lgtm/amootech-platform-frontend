@@ -1,4 +1,5 @@
 "use client";
+import StudentAccountForm from "@/components/accounts/StudentAccountForm";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { api, Page, errorMessage } from "@/lib/api";
@@ -78,7 +79,7 @@ export default function StudentsClient(){
       <span style={{fontSize:".82rem", color:"#475569"}}>{selected.size} انتخاب شده</span>
       <select value={bulkCounselor} onChange={e=>setBulkCounselor(e.target.value)} style={{border:"1px solid #cbd5e1", borderRadius:".35rem", padding:".35rem"}}><option value="">انتخاب مشاور برای تخصیص</option><option value="none">بدون مشاور (حذف تخصیص)</option>{counselors.map(c=><option key={c.id} value={String(c.id)}>{c.user.username}</option>)}</select>
       <button disabled={selected.size===0 || !bulkCounselor} onClick={doBulk} style={{background: selected.size && bulkCounselor ? "var(--brand-purple)":"#e2e8f0", color: selected.size && bulkCounselor? "white":"#64748b", border:"1px solid #cbd5e1", borderRadius:".35rem", padding:".4rem .7rem"}}>تخصیص گروهی</button>
-      <Link href="/admin/students/new" style={{marginInlineStart:"auto", background:"white", border:"1px solid #cbd5e1", padding:".4rem .7rem", borderRadius:".4rem", textDecoration:"none"}}>افزودن دانش‌آموز</Link>
+      <StudentAccountForm token={token} onCreated={() => void load()}/>
     </div>
     {error && <p role="alert" style={{color:"#991b1b"}}>{error}</p>}
     <div className="admin-table-wrap">

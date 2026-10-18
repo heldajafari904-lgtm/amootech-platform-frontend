@@ -47,6 +47,9 @@ function roleFor(token: string): AuthRole | undefined {
 function readable(value: unknown): string[] {
   if (typeof value === "string") return [value];
   if (Array.isArray(value)) return value.flatMap(readable);
+  if (value && typeof value === "object" && "provider_code" in value && "detail" in value && typeof value.detail === "string") {
+    return [value.detail];
+  }
   if (value && typeof value === "object") return Object.entries(value).filter(([key]) => key !== "code" && key !== "messages" && key !== "active_item").flatMap(([key, item]) => {
     const values = readable(item);
     return key === "detail" || key === "non_field_errors" ? values : values.map((message) => `${key}: ${message}`);
