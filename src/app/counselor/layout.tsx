@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { safeExamReturn } from "@/components/exams/manualFlow";
+import { usePathname, useRouter } from "next/navigation";
 import { PanelSkeleton } from "@/components/counselor/PanelUI";
 import "./counselor.css";
 import { useEffect, useState } from "react";
@@ -10,6 +11,7 @@ import { CounselorContext } from "@/lib/counselorContext";
 
 export default function CounselorLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const section = pathname.endsWith("/planning") ? "برنامه‌ریزی هفتگی" : pathname === "/counselor" ? "داشبورد" : pathname === "/counselor/exams" ? "آزمون‌ها" : pathname === "/counselor/students" ? "دانش‌آموزان" : "فضای دانش‌آموز";
   const [token, setToken] = useState("");
   const [user, setUser] = useState<User | null>(null);
@@ -38,6 +40,9 @@ export default function CounselorLayout({ children }: { children: React.ReactNod
       if (me.role !== "COUNSELOR") throw new Error("این حساب مشاور نیست.");
       saveSession("COUNSELOR", pair);
       setToken(pair.access); setUser(me); setPassword("");
+      const params = new URLSearchParams(window.location.search);
+      const destination = safeExamReturn(params.get("next") || params.get("returnTo"));
+      if (destination && destination !== window.location.pathname + window.location.search) router.replace(destination);
     } catch (reason) { setError(errorMessage(reason)); }
   }
 

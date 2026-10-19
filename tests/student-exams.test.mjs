@@ -83,3 +83,14 @@ test('start lock survives successful redirect and releases after a failed reques
   assert.equal(failedLock.current, false);
   assert.equal(await runExclusive(failedLock, async () => {}, true), true);
 });
+
+
+test('archived and trashed exams move to past without hiding authorized historical results', () => {
+  for (const code of ['ARCHIVED', 'TRASHED']) {
+    const inactive = { ...exam, availability: { code, can_start: false, results_released: true } };
+    assert.equal(studentExamInSection(inactive, 'active', false), false);
+    assert.equal(studentExamInSection(inactive, 'past', false), true);
+    assert.equal(canStartExam(inactive, false), false);
+    assert.equal(studentExamInSection({ ...inactive, result_available: true }, 'results', false), true);
+  }
+});

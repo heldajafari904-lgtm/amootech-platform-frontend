@@ -1,4 +1,6 @@
-export type StudentExam = {
+import type { ExamSchedule } from "@/components/exams/schedule";
+
+export type StudentExam = ExamSchedule & {
   id: number; title: string; question_count: number | null; question_type: string | null;
   duration_minutes: number | null; status: string; counselor_name?: string | null;
   result_available?: boolean; is_personal_practice?: boolean;
@@ -8,13 +10,14 @@ export const studentEmptyStates: Record<string, string> = {
   results: "هنوز نتیجه‌ای ثبت نشده است.", past: "هنوز آزمونی در بخش گذشته ندارید.",
 };
 export function studentExamInSection(exam: StudentExam, section: string, hasResult: boolean) {
+  const inactive = ["ARCHIVED", "TRASHED", "DEADLINE_PASSED"].includes(exam.availability?.code ?? "");
   if (section === "practice") return !!exam.is_personal_practice;
   if (section === "results") return !!exam.result_available || hasResult;
-  if (section === "past") return exam.status === "CLOSED" || !!exam.result_available || hasResult;
-  return canStartExam(exam, hasResult);
+  if (section === "past") return exam.status === "CLOSED" || inactive || !!exam.result_available || hasResult;
+  return exam.status === "PUBLISHED" && !inactive && !exam.result_available && !hasResult;
 }
 export function canStartExam(exam: StudentExam, hasResult: boolean) {
-  return exam.status === "PUBLISHED" && !exam.result_available && !hasResult;
+  return exam.status === "PUBLISHED" && exam.availability?.can_start !== false && !exam.result_available && !hasResult;
 }
 export async function runExclusive(lock: { current: boolean }, task: () => Promise<void>, keepOnSuccess = false) {
   if (lock.current) return false;

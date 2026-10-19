@@ -6,6 +6,7 @@ import { ResultDetails, ExamSkeleton, ExamPageHeader, ExamSectionNav, ExamStatus
 import { allPages, api, errorMessage } from "@/lib/api";
 import { useDialogFocus } from "@/components/counselor/PanelUI";
 import PracticeBuilder from "./PracticeBuilder";
+import { examDateTime, participationMessage } from "@/components/exams/schedule";
 import { canStartExam, studentEmptyStates, studentExamInSection, runExclusive, type StudentExam as Exam } from "./studentExam";
 import "./student-exams.css";
 import { useStudentPlanAuth } from "../plans/layout";
@@ -32,12 +33,25 @@ export default function StudentExams() {
 
   useEffect(() => {
     let live = true;
-    setLoading(true); setError("");
-    allPages<Exam>("/exams/", token)
-      .then(rows => { if (live) setExams(rows); })
-      .catch(reason => { if (live) setError(errorMessage(reason)); })
-      .finally(() => { if (live) setLoading(false); });
-    return () => { live = false; };
+    let revision = 0;
+    async function refresh(initial = false) {
+      const request = ++revision;
+      if (initial) { setLoading(true); setError(""); }
+      try {
+        const rows = await allPages<Exam>("/exams/", token);
+        if (live && request === revision) {
+          setExams(rows);
+          setConfirmExam(current => current ? rows.find(row => row.id === current.id) ?? null : null);
+        }
+      } catch (reason) { if (live && request === revision && initial) setError(errorMessage(reason)); }
+      finally { if (live && request === revision) setLoading(false); }
+    }
+    void refresh(true);
+    const onFocus = () => { if (!document.hidden) void refresh(); };
+    const timer = setInterval(onFocus, 30_000);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => { live = false; clearInterval(timer); window.removeEventListener("focus", onFocus); document.removeEventListener("visibilitychange", onFocus); };
   }, [token, reload]);
 
   async function startExam(id: number) {
@@ -92,18 +106,25 @@ export default function StudentExams() {
       {visibleExams.map(exam => <article className="exam-card" key={exam.id} aria-busy={starting === exam.id || resultBusy.has(exam.id)}>
         <div className="exam-card-head"><div><h2>{exam.title}</h2><p className="exam-card-person">{exam.is_personal_practice ? "تمرین شخصی" : exam.counselor_name ? `از طرف مشاور: ${exam.counselor_name}` : "از طرف مشاور"}</p></div><ExamStatusBadge status={exam.status}/></div>
         <div className="exam-card-meta"><span>{exam.question_type === "1" ? "تستی" : exam.question_type === "2" ? "تشریحی" : "نوع نامشخص"}</span><span>{exam.question_count === null ? "—" : exam.question_count.toLocaleString("fa-IR")} سوال</span><span>{exam.duration_minutes === null ? "—" : exam.duration_minutes.toLocaleString("fa-IR")} دقیقه</span></div>
+        <div className="exam-schedule-summary">
+          {exam.availability && <p role="status">{participationMessage(exam)}</p>}
+          {exam.scheduled_start_at && <p>شروع: <time dateTime={exam.scheduled_start_at}>{examDateTime(exam.scheduled_start_at)}</time></p>}
+          {exam.participation_deadline_at && <p>مهلت شروع شرکت: <time dateTime={exam.participation_deadline_at}>{examDateTime(exam.participation_deadline_at)}</time></p>}
+          {exam.result_release_at && <p>انتشار نتیجه: <time dateTime={exam.result_release_at}>{examDateTime(exam.result_release_at)}</time></p>}
+        </div>
         <div className="exam-actions">
           {canStartExam(exam, !!results[exam.id]) && <button className="exam-primary" type="button" disabled={starting !== null || resultBusy.has(exam.id)} onClick={() => { setStartError(""); setConfirmExam(exam); }}>شروع آزمون ↗</button>}
-          {exam.result_available || results[exam.id] ? <button className="exam-primary" type="button" disabled={resultBusy.has(exam.id) || starting !== null} onClick={() => void fetchResult(exam.id)}>{resultBusy.has(exam.id) ? "در حال دریافت نتیجه…" : "مشاهده نتیجه"}</button> : null}
-          <details className="exam-more"><summary>بیشتر</summary><div className="exam-actions"><button className="exam-secondary" type="button" disabled={resultBusy.has(exam.id) || starting !== null} onClick={() => void fetchResult(exam.id, !!results[exam.id])}>{resultBusy.has(exam.id) ? "در حال دریافت نتیجه…" : results[exam.id] ? "به‌روزرسانی نتیجه" : "دریافت نتیجه"}</button></div></details>
+          {exam.result_available || results[exam.id] ? <button className="exam-primary" type="button" disabled={exam.availability?.results_released === false || resultBusy.has(exam.id) || starting !== null} onClick={() => void fetchResult(exam.id)}>{resultBusy.has(exam.id) ? "در حال دریافت نتیجه…" : "مشاهده نتیجه"}</button> : null}
+          <details className="exam-more"><summary>بیشتر</summary><div className="exam-actions"><button className="exam-secondary" type="button" disabled={exam.availability?.results_released === false || resultBusy.has(exam.id) || starting !== null} onClick={() => void fetchResult(exam.id, !!results[exam.id])}>{resultBusy.has(exam.id) ? "در حال دریافت نتیجه…" : results[exam.id] ? "به‌روزرسانی نتیجه" : "دریافت نتیجه"}</button></div></details>
         </div>
-        {results[exam.id] && <ResultDetails result={results[exam.id]} student collapseAnswers/>}
+        {exam.availability?.results_released !== false && results[exam.id] && <ResultDetails result={results[exam.id]} student collapseAnswers/>}
       </article>)}
     </div>}
     {confirmExam && <div className="exam-dialog-backdrop"><section className="exam-dialog" role="dialog" aria-modal="true" aria-labelledby="exam-start-title" aria-describedby="exam-start-description">
       <h2 id="exam-start-title">شروع آزمون</h2><p id="exam-start-description">با شروع آزمون وارد محیط آزمون می‌شوید.</p><strong>{confirmExam.title}</strong><p>{confirmExam.question_count?.toLocaleString("fa-IR") ?? "—"} سوال · {confirmExam.duration_minutes?.toLocaleString("fa-IR") ?? "—"} دقیقه</p>
+      {confirmExam.availability && !confirmExam.availability.can_start && <p role="status">{participationMessage(confirmExam)}</p>}
       {startError && <p className="exam-feedback" role="alert">{startError} <Link href="/student/profile">بررسی موبایل و اتصال حساب در پروفایل</Link></p>}
-      <div className="exam-actions"><button className="exam-primary" type="button" disabled={starting !== null} onClick={() => void startExam(confirmExam.id)}>{starting === confirmExam.id ? "در حال آماده‌سازی آزمون..." : "شروع آزمون"}</button><button className="exam-secondary" type="button" disabled={starting !== null} onClick={() => setConfirmExam(null)}>انصراف</button></div>
+      <div className="exam-actions"><button className="exam-primary" type="button" disabled={starting !== null || !canStartExam(confirmExam, !!results[confirmExam.id])} onClick={() => void startExam(confirmExam.id)}>{starting === confirmExam.id ? "در حال آماده‌سازی آزمون..." : "شروع آزمون"}</button><button className="exam-secondary" type="button" disabled={starting !== null} onClick={() => setConfirmExam(null)}>انصراف</button></div>
     </section></div>}
   </main>;
 }

@@ -61,8 +61,6 @@ export default function PracticeBuilder({ token, onCreated, onBusyChange }: { to
   useEffect(() => {
     if (!grade || !course) return;
     let live = true;
-    setDetail(null);
-    setDetailError("");
     api<unknown>("/exams/provider/course-detail/", token, "POST", { grade_id: Number(grade), course_id: Number(course), consider_used_question: false }).then(response => {
       const data = courseDetail(response, Number(course));
       if (live) { setDetail({ key: detailKey, data }); setDetailError(""); }
@@ -77,8 +75,8 @@ export default function PracticeBuilder({ token, onCreated, onBusyChange }: { to
   useEffect(() => {
     if (!selectionValid || !needsInventory) return;
     let live = true;
-    setInventoryError("");
     const timer = setTimeout(() => {
+      setInventoryError("");
       api<Inventory>("/exams/provider/question-count/", token, "POST", JSON.parse(inventoryKey)).then(response => {
         if (!difficulties.every(({ key }) => Number.isInteger(response[key]) && response[key] >= 0)) throw new Error("تعداد سوال‌های موجود در دسترس نیست.");
         if (live) {
@@ -90,7 +88,7 @@ export default function PracticeBuilder({ token, onCreated, onBusyChange }: { to
     return () => { live = false; clearTimeout(timer); };
   }, [token, selectionValid, inventoryKey, revision, needsInventory]);
 
-  function retry() { setDataError(""); setDetailError(""); setInventoryError(""); setRevision(value => value + 1); }
+  function retry() { setDetail(null); setDataError(""); setDetailError(""); setInventoryError(""); setRevision(value => value + 1); }
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (step !== 4 || !selectionValid || !countsValid || !durationValid) return;

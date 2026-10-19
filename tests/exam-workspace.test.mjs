@@ -28,6 +28,7 @@ test('primary actions follow state and omit unusable actions', () => {
   assert.equal(primaryExamAction({ ...exam, manage_url: null }), null);
   assert.equal(primaryExamAction({ ...exam, status: 'READY' }), 'publish');
   assert.equal(primaryExamAction({ ...exam, status: 'READY', student: null }), null);
+  assert.equal(primaryExamAction({ ...exam, status: 'READY', student: null, assignment_count: 3 }), 'publish');
   assert.equal(primaryExamAction({ ...exam, status: 'PUBLISHED' }), 'result');
   assert.equal(primaryExamAction({ ...exam, status: 'CLOSED' }), 'result');
   assert.equal(primaryExamAction({ ...exam, status: 'UNKNOWN' }), null);

@@ -17,3 +17,6 @@
   .student-exam-center .exam-dialog-backdrop { padding: 10px; }
   .student-exam-center .exam-dialog { max-height: calc(100dvh - 20px); }
 }
+
+.exam-schedule-summary { font-size: 12px; color: var(--exam-muted); line-height: 1.8; }
+.exam-schedule-summary p { margin: 6px 0; }
