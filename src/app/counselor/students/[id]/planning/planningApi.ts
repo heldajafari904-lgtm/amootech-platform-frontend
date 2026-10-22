@@ -1,7 +1,7 @@
 import { api } from "@/lib/api";
 import { downloadPlanExport, type Commitment, type Plan, type PlanDay, type PlanItem, type SchoolSlot } from "@/lib/planning";
 
-export type ItemInput = Pick<PlanItem, "plan_day" | "kind" | "ordering" | "title" | "planned_duration_minutes" | "start_time" | "end_time" | "note" | "subject" | "chapter" | "topic" | "test_count">;
+export type ItemInput = Pick<PlanItem, "plan_day" | "kind" | "ordering" | "planned_duration_minutes" | "start_time" | "end_time" | "note" | "subject" | "chapter" | "topic" | "test_count"> & { title?: string; taxonomy?: PlanItem["taxonomy"]; reset_generated_title?: boolean };
 export type MoveInput = { target_day: number; ordering?: number; start_time?: string | null; end_time?: string | null; planned_duration_minutes?: number };
 export function planningApi(token: string) {
   return {

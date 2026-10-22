@@ -18,30 +18,37 @@ export function envelope(value: unknown) { return field(value, "result", "data")
 // Keep Quiz24 keys intact; the root course is never offered as a chapter.
 export function courseDetail(response: unknown, courseId: number): unknown {
   const value = envelope(response);
-  if (!Array.isArray(value)) {
-    if (Array.isArray(field(value, "chapters"))) return value;
+  const normalized = !Array.isArray(value) && Array.isArray(field(value, "chapters"));
+  if (!Array.isArray(value) && !normalized) {
     throw new Error("ساختار مبحث‌های درس معتبر نیست.");
   }
-  if (!value.length) return { chapters: [] };
-  const roots = value.filter(row => Number(field(row, "type")) === 1);
+  const rows: unknown[] = Array.isArray(value) ? value : [];
+  const roots = rows.filter(row => Number(field(row, "type")) === 1);
   const root = roots.find(row => Number(field(row, "key")) === courseId);
-  if (roots.length && !root) throw new Error("اطلاعات مبحث‌ها متعلق به درس انتخاب‌شده نیست.");
-  const children = root ? field(root, "children") : value;
-  function level(rows: unknown, type: number, parent: number): Record<string, unknown>[] {
+  if (roots.length && (!root || roots.length !== 1 || rows.length !== 1)) throw new Error("اطلاعات مبحث‌ها متعلق به درس انتخاب‌شده نیست.");
+  const children = normalized ? field(value, "chapters") : root ? field(root, "children") : rows;
+  const seen = new Map<number, Set<number>>();
+  function level(rows: unknown, type: number, path: Record<string, number>): Record<string, unknown>[] {
     if (!Array.isArray(rows)) throw new Error("ساختار مبحث‌های درس معتبر نیست.");
     return rows.map(raw => {
-      const id = Number(field(raw, "key"));
-      const title = field(raw, "title");
+      const kind = type === 2 ? "chapter" : type === 3 ? "subject" : "object";
+      const id = Number(field(raw, ...(normalized ? [`${kind}id`, "id", "key"] : ["key"])));
+      const title = field(raw, ...(normalized ? [`${kind}name`, "name", "title"] : ["title"]));
       const parentId = field(raw, "parentid");
-      if (!Number.isSafeInteger(id) || id <= 0 || typeof title !== "string" || Number(field(raw, "type")) !== type || (parentId != null && Number(parentId) !== parent)) {
+      const parent = path[type === 2 ? "course" : type === 3 ? "chapter" : "subject"];
+      const duplicate = seen.get(type)?.has(id);
+      if (!Number.isSafeInteger(id) || id <= 0 || typeof title !== "string" || !title.trim() || (!normalized && Number(field(raw, "type")) !== type) || (parentId != null && Number(parentId) !== parent) || duplicate || Object.entries(path).some(([kind, identifier]) => field(raw, `${kind}id`) != null && Number(field(raw, `${kind}id`)) !== identifier)) {
         throw new Error("شناسه یا ارتباط مبحث‌های درس معتبر نیست.");
       }
-      const childRows = field(raw, "children");
-      if (!Array.isArray(childRows)) throw new Error("ساختار مبحث‌های درس معتبر نیست.");
-      return { id, title, ...(type === 2 ? { subjects: level(childRows, 3, id) } : type === 3 ? { objects: level(childRows, 4, id) } : {}) };
+      if (!seen.has(type)) seen.set(type, new Set());
+      seen.get(type)!.add(id);
+      const childRows = field(raw, normalized ? (type === 2 ? "subjects" : "objects") : "children") ?? [];
+      if (!Array.isArray(childRows) || (type === 4 && childRows.length)) throw new Error("ساختار مبحث‌های درس معتبر نیست.");
+      const nextPath = { ...path, [kind]: id };
+      return { id, title, ...(type === 2 ? { subjects: level(childRows, 3, nextPath) } : type === 3 ? { objects: level(childRows, 4, nextPath) } : {}) };
     });
   }
-  return { chapters: level(children, 2, courseId) };
+  return { chapters: level(children, 2, { course: courseId }) };
 }
 
 export function hierarchySelection(taxonomy: unknown, chapter: string, subject: string, object: string) {
@@ -56,4 +63,15 @@ export function hierarchySelection(taxonomy: unknown, chapter: string, subject: 
 
 export function coursesForGrade(courses: Option[], grade: string) {
   return grade ? courses.filter(row => String(field(row.raw, "gradeid")) === grade) : [];
+}
+
+export type TopicNode = Option & { level: 'chapter' | 'subject' | 'object'; chapter: number; subject?: number };
+export function topicNodes(taxonomy: unknown): TopicNode[] {
+  return options(field(taxonomy, 'chapters'), 'chapter').flatMap(chapter => [
+    { ...chapter, level: 'chapter' as const, chapter: chapter.id },
+    ...options(field(chapter.raw, 'subjects'), 'subject').flatMap(subject => [
+      { ...subject, level: 'subject' as const, chapter: chapter.id, subject: subject.id },
+      ...options(field(subject.raw, 'objects'), 'object').map(object => ({ ...object, level: 'object' as const, chapter: chapter.id, subject: subject.id })),
+    ]),
+  ]);
 }

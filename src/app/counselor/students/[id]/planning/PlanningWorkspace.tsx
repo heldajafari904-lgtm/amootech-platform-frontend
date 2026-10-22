@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { StudentPlanningHeader, TopChart } from "./PlanningOverview";
 import WizardAddBox from "./WizardAddBox";
+import ActivityEditor from "./ActivityEditor";
 import TimelineBoard from "./TimelineBoard";
-import { planningApi, type ItemInput } from "./planningApi";
+import { planningApi } from "./planningApi";
 import { clampTime, itemDuration, minutesToTime, timeToMinutes } from "./plannerTime";
 import { apiErrorMessage } from "./planningFeedback";
 import FixedSchedulePanel from "./FixedSchedulePanel";
@@ -35,149 +36,6 @@ function notify(setNotice: (s: string) => void, msg: string) {
   setNotice(msg);
   window.setTimeout(() => setNotice(""), 2500);
 }
-// ---- QuickAdd ----
-type QuickAddProps = {
-  token: string;
-  student: Student;
-  dayId: number;
-  ordering: number;
-  tree: AcademicTree;
-  onCreated: (item: PlanItem) => Promise<void>;
-  onError: (m: string) => void;
-  initialItem?: PlanItem;
-  onCancel?: () => void;
-  mode?: "create" | "edit";
-};
-
-function QuickAdd({ token, dayId, ordering, tree, onCreated, onError, initialItem, onCancel, mode = "create" }: QuickAddProps) {
-  const [kind, setKind] = useState<PlanItem["kind"]>((initialItem?.kind as PlanItem["kind"]) || "STUDY");
-  const [subject, setSubject] = useState<string>(initialItem?.subject ? String(initialItem.subject) : "");
-  const [chapter, setChapter] = useState<string>(initialItem?.chapter ? String(initialItem.chapter) : "");
-  const [topic, setTopic] = useState<string>(initialItem?.topic ? String(initialItem.topic) : "");
-  const [duration, setDuration] = useState<string>(initialItem?.planned_duration_minutes ? String(initialItem.planned_duration_minutes) : "60");
-  const [testCount, setTestCount] = useState<string>(initialItem?.test_count ? String(initialItem.test_count) : "");
-  const [title, setTitle] = useState(initialItem?.title || "");
-  const [startTime, setStartTime] = useState(initialItem?.start_time?.slice(0, 5) || "");
-  const [endTime, setEndTime] = useState(initialItem?.end_time?.slice(0, 5) || "");
-  const [note, setNote] = useState(initialItem?.note || "");
-  const [more, setMore] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [localError, setLocalError] = useState("");
-  const submitting = useRef(false);
-
-  const chapters = useMemo(() => (subject ? tree.chapters.filter((c) => String(c.subject) === subject) : []), [subject, tree]);
-  const topics = useMemo(() => (chapter ? tree.topics.filter((t) => String(t.chapter) === chapter) : []), [chapter, tree]);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (submitting.current) return;
-    submitting.current = true; setBusy(true); setLocalError("");
-    const payload: ItemInput = {
-      plan_day: dayId,
-      kind,
-      ordering: initialItem?.ordering ?? ordering,
-      title: title.trim(),
-      planned_duration_minutes: duration ? Number(duration) : null,
-      start_time: startTime || null,
-      end_time: endTime || null,
-      note,
-      subject: subject ? Number(subject) : null,
-      chapter: chapter ? Number(chapter) : null,
-      topic: topic ? Number(topic) : null,
-      test_count: kind === "TEST" ? (testCount ? Number(testCount) : null) : null,
-    };
-    try {
-      const client = planningApi(token);
-      const item = mode === "edit" && initialItem ? await client.updateItem(initialItem.id, payload) : await client.createItem(payload);
-      await onCreated(item);
-    } catch (reason) { const message = apiErrorMessage(reason); setLocalError(message); onError(message); }
-    finally { submitting.current = false; setBusy(false); }
-  }
-
-  return (
-    <form className="ws-quickadd" onSubmit={submit} aria-label={mode === "edit" ? "ویرایش فعالیت" : "افزودن سریع"}>
-      {localError && <p className="ws-error" role="alert">{localError}</p>}
-      <div className="ws-quickadd-row">
-        <label>
-          نوع
-          <select value={kind} onChange={(e) => setKind(e.target.value as PlanItem["kind"])}>
-            <option value="STUDY">مطالعه</option>
-            <option value="TEST">تست</option>
-            <option value="REVIEW">مرور</option>
-            <option value="EXAM">آزمون</option>
-            <option value="EVENT">رویداد</option>
-          </select>
-        </label>
-        <label>
-          درس
-          <select value={subject} onChange={(e) => { setSubject(e.target.value); setChapter(""); setTopic(""); }}>
-            <option value="">انتخاب درس</option>
-            {tree.subjects.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          مبحث/فصل
-          <select value={chapter} onChange={(e) => { setChapter(e.target.value); setTopic(""); }} disabled={!subject}>
-            <option value="">{chapters.length ? "انتخاب فصل" : "بدون فصل"}</option>
-            {chapters.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-        </label>
-        {topics.length > 0 && (
-          <label>
-            مبحث
-            <select value={topic} onChange={(e) => setTopic(e.target.value)}>
-              <option value="">بدون مبحث</option>
-              {topics.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
-          </label>
-        )}
-      </div>
-      <div className="ws-quickadd-row">
-        {(kind === "EXAM" || kind === "EVENT") && (
-          <label>
-            عنوان
-            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={kind === "EVENT" ? "مثلاً باشگاه" : "آزمون آزمایشی"} required />
-          </label>
-        )}
-        <label>
-          مدت (دقیقه)
-          <input type="number" min={1} value={duration} onChange={(e) => setDuration(e.target.value)} required={kind !== "EVENT"} />
-        </label>
-        {kind === "TEST" && (
-          <label>
-            تعداد تست
-            <input type="number" min={1} value={testCount} onChange={(e) => setTestCount(e.target.value)} required />
-          </label>
-        )}
-      </div>
-      <button type="button" className="ws-link" onClick={() => setMore((v) => !v)} aria-expanded={more}>
-        {more ? "بستن گزینه‌های بیشتر" : "گزینه‌های بیشتر"}
-      </button>
-      {more && (
-        <div className="ws-quickadd-row">
-          <label>ساعت شروع<input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} /></label>
-          <label>ساعت پایان<input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} /></label>
-          <label>توضیحات<textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></label>
-          {kind !== "EXAM" && kind !== "EVENT" ? (
-            <label>عنوان (اختیاری)<input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
-          ) : null}
-        </div>
-      )}
-      <div className="ws-quickadd-actions">
-        <button type="submit" disabled={busy}>{busy ? "در حال ذخیره…" : mode === "edit" ? "ذخیره تغییرات" : "افزودن"}</button>
-        {onCancel && <button type="button" className="ws-subtle" onClick={onCancel}>انصراف</button>}
-      </div>
-    </form>
-  );
-}
-
-
 // ---- Main Workspace ----
 export default function PlanningWorkspace({ studentId }: { studentId: string }) {
   const { token, user } = useCounselor();
@@ -486,7 +344,7 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
   }
 
   const [showNewPlan, setShowNewPlan] = useState(false);
-  useDialogFocus(!loading && (showNewPlan || !!editingItem || !!copyConfirm || !!moveItem || !!deleteTarget), () => { setShowNewPlan(false); setEditingItem(null); setCopyConfirm(null); setMoveItem(null); setDeleteTarget(null); });
+  useDialogFocus(!loading && (showNewPlan || !!copyConfirm || !!moveItem || !!deleteTarget), () => { setShowNewPlan(false); setCopyConfirm(null); setMoveItem(null); setDeleteTarget(null); });
   // open modal if ?new=1
   useEffect(()=>{
     const q=new URLSearchParams(window.location.search);
@@ -646,20 +504,19 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
         </>
       )}
 
-      {quickAddDay && tree && plan?.days?.find(day => day.date === quickAddDay) && <WizardAddBox date={quickAddDay} token={token} dayId={plan.days.find(day => day.date === quickAddDay)!.id} ordering={Math.max(-1,...plan.days.find(day => day.date === quickAddDay)!.items.map(item => item.ordering))+1} tree={tree} onCreated={async item => { await canonicalItem(item); setQuickAddDay(null); }} onError={setError} onCancel={() => setQuickAddDay(null)}/>}
-      {deleteTarget && <div className="ws-modal" role="dialog" aria-modal="true" aria-label="حذف فعالیت"><div className="ws-modal-card"><h3>فعالیت حذف شود؟</h3><p>{deleteTarget.subject_name || deleteTarget.title}</p><p>این عمل فعالیت برنامه‌ریزی‌شده را حذف می‌کند.</p><div className="panel-row-actions"><button className="ws-danger" disabled={actionKeys.has(`item:${deleteTarget.id}`)} onClick={() => { void handleDelete(deleteTarget); }}>{actionKeys.has(`item:${deleteTarget.id}`) ? "در حال حذف…" : "حذف"}</button><button onClick={() => setDeleteTarget(null)}>لغو</button></div>{error && <p className="ws-error" role="alert">{error}</p>}</div></div>}
-      {editingItem && tree && (
+      {quickAddDay && student && plan?.days?.find(day => day.date === quickAddDay) && <WizardAddBox date={quickAddDay} token={token} dayId={plan.days.find(day => day.date === quickAddDay)!.id} ordering={Math.max(-1,...plan.days.find(day => day.date === quickAddDay)!.items.map(item => item.ordering))+1} tree={tree} student={student} onCreated={async item => { await canonicalItem(item); setQuickAddDay(null); }} onError={setError} onCancel={() => setQuickAddDay(null)}/>}
+      {deleteTarget && <div className="ws-modal" role="dialog" aria-modal="true" aria-label="حذف فعالیت"><div className="ws-modal-card"><h3>فعالیت حذف شود؟</h3><p>{deleteTarget.title || deleteTarget.subject_name}</p><p>این عمل فعالیت برنامه‌ریزی‌شده را حذف می‌کند.</p><div className="panel-row-actions"><button className="ws-danger" disabled={actionKeys.has(`item:${deleteTarget.id}`)} onClick={() => { void handleDelete(deleteTarget); }}>{actionKeys.has(`item:${deleteTarget.id}`) ? "در حال حذف…" : "حذف"}</button><button onClick={() => setDeleteTarget(null)}>لغو</button></div>{error && <p className="ws-error" role="alert">{error}</p>}</div></div>}
+      {editingItem && student && (
         <div className="ws-modal" role="dialog" aria-modal="true" aria-label="ویرایش فعالیت">
           <div className="ws-modal-card">
-            <QuickAdd
+            <ActivityEditor key={editingItem.id} modal
               token={token}
               student={student!}
               dayId={editingItem.plan_day}
               ordering={editingItem.ordering}
               tree={tree}
               initialItem={editingItem}
-              mode="edit"
-              onCreated={async item => { await canonicalItem(item); setEditingItem(null); notify(setNotice, "تغییرات ذخیره شد."); }}
+              onSaved={async item => { await canonicalItem(item); setEditingItem(null); notify(setNotice, "تغییرات ذخیره شد."); }}
               onError={setError}
               onCancel={() => setEditingItem(null)}
             />

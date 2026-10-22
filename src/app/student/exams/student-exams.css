@@ -20,3 +20,44 @@
 
 .exam-schedule-summary { font-size: 12px; color: var(--exam-muted); line-height: 1.8; }
 .exam-schedule-summary p { margin: 6px 0; }
+
+.question-bank-topics { display: grid; gap: .65rem; min-width: 0; }
+.report-topic-builder { margin-block: 1rem; border: 1px solid var(--exam-border); border-radius: 12px; padding: 1rem; min-width: 0; }
+.report-topic-builder fieldset { border: 0; padding: 0; display: grid; gap: 1rem; min-width: 0; }
+.report-filter { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; }
+.report-filter label { display: grid; gap: .4rem; flex: 1 1 180px; min-width: 0; }
+.report-topic-builder :is(input:not([type=checkbox]),select) { max-width: 100%; min-height: 44px; border: 1px solid var(--exam-border); border-radius: .5rem; padding: .55rem; background: var(--exam-surface, white); color: inherit; }
+.report-source-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,280px),1fr)); gap: .75rem; }
+.report-source-card { display: flex; align-items: start; gap: .6rem; border: 1px solid var(--exam-border); border-radius: .6rem; padding: .8rem; cursor: pointer; min-width: 0; overflow-wrap: anywhere; }
+.report-source-card:has(input:checked) { border-color: var(--exam-brand); background: #1392a50a; }
+.report-source-card input { width: 22px; height: 22px; flex: 0 0 22px; }
+.report-source-card small { display: block; margin-top: .5rem; line-height: 1.8; }
+.report-topic-builder .question-bank-summary { overflow-wrap: anywhere; }
+.question-bank-chapter, .question-bank-subject { border: 1px solid var(--exam-border); border-radius: .5rem; padding: .35rem .6rem; }
+.question-bank-subject { margin-block: .4rem; margin-inline-start: .7rem; }
+.question-bank-chapter summary, .question-bank-subject summary { min-height: 44px; display: list-item; align-content: center; cursor: pointer; }
+.student-practice-form .question-bank-check { display: flex; align-items: center; gap: .6rem; min-height: 44px; padding: .3rem; }
+.student-practice-form .question-bank-check input { width: 20px; height: 20px; flex: 0 0 20px; accent-color: var(--exam-brand); }
+.student-practice-form :is(button,input,select,summary):focus-visible { outline: 3px solid #1392a5; outline-offset: 3px; }
+@media(max-width:600px) {
+  .question-bank-chapter { padding: .3rem .45rem; }
+  .student-practice-form :is(input,select) { font-size: 16px; }
+}
+
+.automatic-catalog-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.6rem}
+.automatic-catalog-tiles button{min-height:48px;text-align:start;white-space:normal;overflow-wrap:anywhere}
+.automatic-topic-stage{display:grid;gap:.7rem}
+.automatic-topic-rows{display:grid;gap:.5rem}
+.automatic-topic-row{display:flex;align-items:center;justify-content:space-between;gap:.5rem;border:1px solid #d5e2e5;border-radius:.5rem;padding:.5rem}
+.automatic-topic-row label{flex:1;min-height:44px;cursor:pointer}
+.automatic-topic-row button{flex-shrink:0;min-height:44px}
+.automatic-catalog-tiles button:focus-visible,.automatic-topic-row :is(button,input):focus-visible{outline:3px solid #1392a5;outline-offset:3px}
+
+.report-course-group {border-block-end:1px solid var(--border, #ddd);padding-block:1rem;min-width:0}
+.report-course-group h3 small {font-weight:400;font-size:.8rem}
+.report-node-object {margin-inline-start:1.5rem}
+.report-question-settings {margin-block:1rem}
+.report-question-settings input {max-width:7rem}
+.report-topic-builder fieldset {min-width:0;border:0;padding:0}
+.report-topic-builder .exam-difficulties {display:flex;flex-wrap:wrap;gap:.75rem}
+.report-topic-builder .exam-difficulties label {display:grid;gap:.3rem}

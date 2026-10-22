@@ -33,7 +33,7 @@ export default function PlanActivityCard({
   const variant = isFixed ? (item.note === "مدرسه" ? "fixed-school" : "fixed") : item.kind.toLowerCase();
   const kindClass = `ws-box ws-box-${variant}`;
   const title = item.title || item.subject_name || "—";
-  const sub = (item.chapter_name || item.topic_name) ? [item.chapter_name, item.topic_name].filter(Boolean).join(" › ") : (item.subject_name && item.title ? item.subject_name : "");
+  const sub = item.taxonomy?.provider ? Object.values(item.taxonomy.labels ?? {}).filter(Boolean).join(" › ") : (item.chapter_name || item.topic_name) ? [item.chapter_name, item.topic_name].filter(Boolean).join(" › ") : (item.subject_name && item.title ? item.subject_name : "");
   const note = (item.note || "").trim();
   const isLongNote = note.length > NOTE_COLLAPSE_CHARS;
   const [expanded, setExpanded] = useState(false);

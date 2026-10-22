@@ -37,11 +37,11 @@ export function validCounts(counts: Record<Difficulty, string>, available: Inven
 }
 
 export type PracticeFilters = { grade_id: number; course_id: number; question_type: number; chapter_ids: number[]; subject_ids: number[]; object_ids: number[] };
-export function practicePayload(filters: PracticeFilters, counts: Record<Difficulty, string>, title: string, duration: number) {
+export function practicePayload(filters: PracticeFilters, counts: Record<Difficulty, string>, title: string, duration: number, negativeScore = false) {
   return {
     grade_external_id: filters.grade_id, course_id: filters.course_id, question_type: filters.question_type,
     chapter_ids: filters.chapter_ids, subject_ids: filters.subject_ids, object_ids: filters.object_ids,
-    consider_used_question: false, title: title.trim(), duration_minutes: duration, has_negative_score: false,
+    consider_used_question: false, title: title.trim(), duration_minutes: duration, has_negative_score: negativeScore,
     easy_count: Number(counts.easy), medium_count: Number(counts.medium), hard_count: Number(counts.hard), very_hard_count: Number(counts.very_hard),
   };
 }

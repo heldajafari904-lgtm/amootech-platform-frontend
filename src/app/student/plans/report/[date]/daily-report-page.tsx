@@ -6,7 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { DailyReport, DailyReportItem, minutesText, ReportStudent } from "@/lib/dailyReports";
 import { persianDate, planningError } from "@/lib/planning";
-import { useStudentPlanAuth } from "../../layout";
+import { useStudentPlanAuth } from "@/lib/studentPlanContext";
+import { createReportWriteQueue, reportingProgress, reportEditable } from "@/lib/reportQuick";
 import ReportActivity from "./ReportActivity";
 import UnplannedEditor from "./UnplannedEditor";
 import { daysAgoIso, tehranTodayIso } from "@/lib/reports";
@@ -28,6 +29,14 @@ export default function DailyReportPage({ date }: { date: string }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  const writes = useRef(createReportWriteQueue());
+  async function updateReport(path: string, method: string, values?: object) {
+    return writes.current(async () => {
+      const updated = await api<DailyReport>(path, token, method, values);
+      setReport(updated);
+      return updated;
+    });
+  }
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -48,7 +57,7 @@ export default function DailyReportPage({ date }: { date: string }) {
     event.preventDefault(); if (!report || busyRef.current) return;
     busyRef.current = true; setBusy(true); setError(""); setNotice("");
     try {
-      const updated = await api<DailyReport>(`/daily-reports/${report.id}/`, token, "PATCH", {
+      const updated = await updateReport(`/daily-reports/${report.id}/`, "PATCH", {
         wake_time: daily.wake_time || null, sleep_time: daily.sleep_time || null,
         mobile_minutes: daily.mobile_minutes === "" ? null : Number(daily.mobile_minutes),
         self_rating: daily.self_rating === "" ? null : Number(daily.self_rating), note: daily.note,
@@ -63,7 +72,7 @@ export default function DailyReportPage({ date }: { date: string }) {
     setError(""); setNotice("");
     try {
       const path = item.plan_item ? `/daily-reports/${report.id}/planned/${item.plan_item}/` : `/daily-reports/${report.id}/unplanned/${item.id}/`;
-      const updated = await api<DailyReport>(path, token, item.plan_item ? "PUT" : "PATCH", values);
+      const updated = await updateReport(path, item.plan_item ? "PUT" : "PATCH", values);
       setReport(updated); setNotice("فعالیت ذخیره شد."); return true;
     } catch (reason) { setError(planningError(reason)); return false; }
   }
@@ -78,11 +87,11 @@ export default function DailyReportPage({ date }: { date: string }) {
       const values: Record<string, number | string> = {};
       if (item.planned_duration_minutes !== null) values.duration_source = "PLAN";
       if (item.planned_test_count !== null) values.actual_test_count = item.planned_test_count;
-      const updated = await api<DailyReport>(`/daily-reports/${report.id}/planned/${item.plan_item}/`, token, "PUT", values);
+      const updated = await updateReport(`/daily-reports/${report.id}/planned/${item.plan_item}/`, "PUT", values);
       setReport(updated); setNotice("طبق برنامه ثبت شد.");
     } catch (reason) {
       setError(planningError(reason));
-      try { setReport(await api<DailyReport>(`/daily-reports/${report.id}/`, token)); } catch { /* Preserve the first error. */ }
+      try { await updateReport(`/daily-reports/${report.id}/`, "GET"); } catch { /* Preserve the first error. */ }
     }
   }
 
@@ -91,7 +100,7 @@ export default function DailyReportPage({ date }: { date: string }) {
     setError(""); setNotice("");
     try {
       const path = editingOutside && editingOutside !== "new" ? `/daily-reports/${report.id}/unplanned/${editingOutside.id}/` : `/daily-reports/${report.id}/unplanned/`;
-      const updated = await api<DailyReport>(path, token, editingOutside && editingOutside !== "new" ? "PATCH" : "POST", values);
+      const updated = await updateReport(path, editingOutside && editingOutside !== "new" ? "PATCH" : "POST", values);
       setReport(updated); setNotice("فعالیت خارج از برنامه ذخیره شد."); return true;
     } catch (reason) { setError(planningError(reason)); return false; }
   }
@@ -99,17 +108,19 @@ export default function DailyReportPage({ date }: { date: string }) {
   async function removeOutside(item: DailyReportItem) {
     if (!report || !window.confirm("این فعالیت خارج از برنامه حذف شود؟")) return;
     setError("");
-    try { setReport(await api<DailyReport>(`/daily-reports/${report.id}/unplanned/${item.id}/`, token, "DELETE")); setNotice("فعالیت حذف شد."); }
+    try { setReport(await updateReport(`/daily-reports/${report.id}/unplanned/${item.id}/`, "DELETE")); setNotice("فعالیت حذف شد."); }
     catch (reason) { setError(planningError(reason)); }
   }
 
   const planned = report?.items.filter((item) => item.plan_item !== null) || [];
   const outside = report?.items.filter((item) => item.plan_item === null) || [];
   const today = tehranTodayIso();
+  const editable = report ? reportEditable(report, today) : false;
+  const progress = reportingProgress(report?.items ?? []);
   return <main className="planning-content report-page" dir="rtl" lang="fa"><Link href="/student/plans">← برنامه من</Link><header className="report-page-header"><div><p className="workspace-eyebrow">گزارش یک روز</p><h1>گزارش کار · {/^\d{4}-\d{2}-\d{2}$/.test(date) ? persianDate(date) : date}</h1></div><div className="report-day-nav"><Link href={`/student/plans/report/${daysAgoIso(date, 1)}`}>روز قبل</Link>{date < today && <Link href={`/student/plans/report/${daysAgoIso(date, -1)}`}>روز بعد</Link>}</div></header><label className="report-date-picker">روز گزارش<input type="date" max={today} value={date} onChange={(event) => { if (event.target.value) router.push(`/student/plans/report/${event.target.value}`); }}/></label>{loading && <p>در حال آماده‌سازی گزارش…</p>}<p className="planning-error" role="alert">{error}</p><p className="planning-notice" role="status">{notice}</p>
-    {report && <><section className="report-summary"><h2>خلاصه روز</h2><div className="report-summary-grid"><strong>برنامه مشاور <span>{minutesText(report.summary.planned_minutes)}</span></strong><strong>عملکرد من <span>{minutesText(report.summary.total_actual_minutes)}</span></strong><strong>تست واقعی / برنامه <span>{report.summary.total_tests} / {report.summary.planned_tests}</span></strong><strong>انجام‌شده <span>{report.summary.completed_plan_items} از {report.summary.planned_items}</span></strong><strong>ناقص <span>{report.summary.partial_plan_items}</span></strong><strong>انجام‌نشده <span>{report.summary.not_done_plan_items}</span></strong><strong>فعالیت خارج از برنامه <span>{outside.length}</span></strong>{report.self_rating !== null && <strong>ارزیابی من <span>{report.self_rating} از ۲۰</span></strong>}</div>{report.summary.by_subject.length > 0 && <ul className="report-subject-totals">{report.summary.by_subject.map((entry) => <li key={entry.name}>{entry.name}: {minutesText(entry.minutes)}</li>)}</ul>}</section>
-    <section className="report-section"><h2>فعالیت‌های برنامه</h2><p className="planning-hint">درس، مبحث و زمان برنامه از برنامهٔ مشاور آمده‌اند. فقط نتیجهٔ واقعی را در صورت نیاز ثبت کنید.</p>{planned.length ? <div className="report-activities">{planned.map((item) => <ReportActivity key={`${item.id}-${item.actual_test_count}-${item.duration_source}`} item={item} onSave={saveItem} onSameAsPlan={sameAsPlan} onEdit={setEditingOutside} onRemove={removeOutside}/>)}</div> : <p>برای این روز فعالیت برنامه‌ریزی‌شده‌ای ثبت نشده است.</p>}</section>
-    <section className="report-section"><div className="planning-editor-heading"><h2>فعالیت خارج از برنامه</h2><button type="button" onClick={() => setEditingOutside("new")}>+ فعالیت خارج از برنامه</button></div>{outside.length > 0 && <div className="report-activities">{outside.map((item) => <ReportActivity key={`${item.id}-${item.actual_test_count}-${item.actual_duration_minutes}`} item={item} onSave={saveItem} onSameAsPlan={sameAsPlan} onEdit={setEditingOutside} onRemove={removeOutside}/>)}</div>}{editingOutside && student && <UnplannedEditor key={editingOutside === "new" ? "new" : editingOutside.id} token={token} student={student} initial={editingOutside === "new" ? undefined : editingOutside} onSave={saveOutside} onCancel={() => setEditingOutside(null)}/>}</section>
-    <details className="report-section report-daily-details"><summary>جزئیات روز (اختیاری)</summary><form onSubmit={saveDaily}><div className="planning-form-row"><label>ساعت بیداری<input type="time" value={daily.wake_time} onChange={(event) => setDaily({ ...daily, wake_time: event.target.value })}/></label><label>ساعت خواب<input type="time" value={daily.sleep_time} onChange={(event) => setDaily({ ...daily, sleep_time: event.target.value })}/></label><label>استفاده از موبایل (دقیقه)<input type="number" min="0" inputMode="numeric" value={daily.mobile_minutes} onChange={(event) => setDaily({ ...daily, mobile_minutes: event.target.value })}/></label><label>نمره روز (۱ تا ۲۰)<input type="number" min="1" max="20" inputMode="numeric" value={daily.self_rating} onChange={(event) => setDaily({ ...daily, self_rating: event.target.value })}/></label></div><label>یادداشت کوتاه (اختیاری)<textarea rows={2} value={daily.note} onChange={(event) => setDaily({ ...daily, note: event.target.value })}/></label><button disabled={busy}>{busy ? "در حال ذخیره…" : "ذخیره جزئیات روز"}</button></form></details></>}
+    {report && <><section className="report-submission-progress" aria-label="پیشرفت ثبت گزارش"><strong>{progress.reported.toLocaleString('fa-IR')} از {progress.total.toLocaleString('fa-IR')} فعالیت گزارش شده</strong><progress max={progress.total || 1} value={progress.reported} aria-label="تعداد فعالیت‌های گزارش‌شده"/><p className="planning-hint">این پیشرفت تعداد گزارش‌هاست، نه میزان پوشش درس‌ها.</p>{!editable && <p>این گزارش تاریخی فقط قابل مشاهده است.</p>}</section><details className="report-summary"><summary>آمار و خلاصه روز</summary><div className="report-summary-grid"><strong>برنامه مشاور <span>{minutesText(report.summary.planned_minutes)}</span></strong><strong>عملکرد من <span>{minutesText(report.summary.total_actual_minutes)}</span></strong><strong>تست واقعی / برنامه <span>{report.summary.total_tests} / {report.summary.planned_tests}</span></strong><strong>انجام‌شده <span>{report.summary.completed_plan_items} از {report.summary.planned_items}</span></strong><strong>ناقص <span>{report.summary.partial_plan_items}</span></strong><strong>انجام‌نشده <span>{report.summary.not_done_plan_items}</span></strong><strong>فعالیت خارج از برنامه <span>{outside.length}</span></strong>{report.self_rating !== null && <strong>ارزیابی من <span>{report.self_rating} از ۲۰</span></strong>}</div>{report.summary.by_subject.length > 0 && <ul className="report-subject-totals">{report.summary.by_subject.map((entry) => <li key={entry.name}>{entry.name}: {minutesText(entry.minutes)}</li>)}</ul>}</details>
+    <section className="report-section"><h2>فعالیت‌های برنامه</h2><p className="planning-hint">برای ثبت نتیجه، یکی از سه گزینه را بزنید. زمان، تعداد تست و یادداشت اختیاری‌اند.</p>{planned.length ? <div className="report-activities">{planned.map((item) => <ReportActivity key={item.id} editable={editable} item={item} onSave={saveItem} onSameAsPlan={sameAsPlan} onEdit={setEditingOutside} onRemove={removeOutside}/>)}</div> : <p>برای این روز فعالیت برنامه‌ریزی‌شده‌ای ثبت نشده است.</p>}</section>
+    <section className="report-section"><div className="planning-editor-heading"><h2>فعالیت خارج از برنامه</h2><button type="button" disabled={!editable} onClick={() => setEditingOutside("new")}>+ فعالیت خارج از برنامه</button></div>{outside.length > 0 && <div className="report-activities">{outside.map((item) => <ReportActivity key={item.id} editable={editable} item={item} onSave={saveItem} onSameAsPlan={sameAsPlan} onEdit={setEditingOutside} onRemove={removeOutside}/>)}</div>}{editingOutside && student && <UnplannedEditor key={editingOutside === "new" ? "new" : editingOutside.id} token={token} student={student} initial={editingOutside === "new" ? undefined : editingOutside} onSave={saveOutside} onCancel={() => setEditingOutside(null)}/>}</section>
+    <details className="report-section report-daily-details"><summary>جزئیات روز (اختیاری)</summary><form onSubmit={saveDaily}><fieldset className="report-optional-fields" disabled={!editable || busy}><div className="planning-form-row"><label>ساعت بیداری<input type="time" value={daily.wake_time} onChange={(event) => setDaily({ ...daily, wake_time: event.target.value })}/></label><label>ساعت خواب<input type="time" value={daily.sleep_time} onChange={(event) => setDaily({ ...daily, sleep_time: event.target.value })}/></label><label>استفاده از موبایل (دقیقه)<input type="number" min="0" inputMode="numeric" value={daily.mobile_minutes} onChange={(event) => setDaily({ ...daily, mobile_minutes: event.target.value })}/></label><label>نمره روز (۱ تا ۲۰)<input type="number" min="1" max="20" inputMode="numeric" value={daily.self_rating} onChange={(event) => setDaily({ ...daily, self_rating: event.target.value })}/></label></div><label>یادداشت کوتاه (اختیاری)<textarea rows={2} value={daily.note} onChange={(event) => setDaily({ ...daily, note: event.target.value })}/></label><button disabled={busy}>{busy ? "در حال ذخیره…" : "ذخیره جزئیات روز"}</button></fieldset></form></details></>}
   </main>;
 }

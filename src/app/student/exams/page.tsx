@@ -6,19 +6,22 @@ import { ResultDetails, ExamSkeleton, ExamPageHeader, ExamSectionNav, ExamStatus
 import { allPages, api, errorMessage } from "@/lib/api";
 import { useDialogFocus } from "@/components/counselor/PanelUI";
 import PracticeBuilder from "./PracticeBuilder";
+import ReportTopicBuilder from "./ReportTopicBuilder";
 import { examDateTime, participationMessage } from "@/components/exams/schedule";
 import { canStartExam, studentEmptyStates, studentExamInSection, runExclusive, type StudentExam as Exam } from "./studentExam";
 import "./student-exams.css";
-import { useStudentPlanAuth } from "../plans/layout";
+import { useStudentPlanAuth } from "@/lib/studentPlanContext";
 
 export default function StudentExams() {
   const { token } = useStudentPlanAuth();
   const [exams, setExams] = useState<Exam[]>([]);
   const [showCreate, setShowCreate] = useState(false);
-  const [creationMode, setCreationMode] = useState<"free" | null>(null);
+  const [showReports, setShowReports] = useState(false);
+  const [reportsMounted, setReportsMounted] = useState(false);
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState("");
   const [startError, setStartError] = useState("");
+  const [createdToStart, setCreatedToStart] = useState<number | null>(null);
   const [section, setSection] = useState("active");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -83,21 +86,24 @@ export default function StudentExams() {
   }
 
   const visibleExams = exams.filter(exam => studentExamInSection(exam, section, !!results[exam.id]));
-  function openCreate() { setCreationMode(null); setShowCreate(true); setNotice(""); }
+  function openCreate() { setShowCreate(true); setNotice(""); }
   useEffect(() => {
     if (showCreate) {
       const panel = document.getElementById("student-exam-create");
-      panel?.scrollIntoView({ block: "start" }); panel?.querySelector<HTMLButtonElement>(".exam-mode button")?.focus({ preventScroll: true });
+      panel?.scrollIntoView({ block: "start" }); panel?.querySelector<HTMLElement>("#practice-step-heading")?.focus({ preventScroll: true });
     }
   }, [showCreate]);
 
   return <main className="planning-content exam-page student-exam-center" dir="rtl">
     <ExamPageHeader title="آزمون‌های من" subtitle="آزمون‌های فعال، تمرین‌ها و نتایج شما"><button className="exam-primary" type="button" disabled={creating || starting !== null} aria-expanded={showCreate} aria-controls="student-exam-create" onClick={openCreate}>ساخت آزمون تمرینی</button></ExamPageHeader>
     {notice && <p className="exam-feedback success" role="status">{notice}</p>}
+    {startError && createdToStart !== null && !confirmExam && <p role="alert">{startError} <button type="button" disabled={starting !== null} onClick={()=>void startExam(createdToStart)}>تلاش دوباره برای ورود</button></p>}
+      <div className="exam-mode"><button type="button" disabled={creating || starting !== null} aria-expanded={showCreate} aria-controls="student-exam-create" onClick={openCreate}>بانک سؤال<small>پایه، درس و مباحث مجاز دوره تحصیلی خود را انتخاب کنید.</small></button><button type="button" disabled={creating || starting !== null} aria-expanded={showReports} aria-controls="student-report-topics" onClick={()=>{setReportsMounted(true);setShowReports(value=>!value)}}>آزمون از گزارش کار<small>فعالیت‌ها و مباحث مطالعه‌شده را انتخاب و موجودی سؤال‌ها را بررسی کنید.</small></button></div>
+    <section id="student-report-topics" hidden={!showReports}>{reportsMounted&&<ReportTopicBuilder key={token} token={token} onBusyChange={setCreating} onCreated={exam=>{setExams(current=>[exam,...current.filter(row=>row.id!==exam.id)]);setSection("practice")}}/>}</section>
     {showCreate && <section className="exam-create" id="student-exam-create" aria-label="ساخت آزمون تمرینی">
       <div className="exam-section-heading"><h2>ساخت آزمون تمرینی</h2><button className="exam-secondary" type="button" disabled={creating} onClick={() => setShowCreate(false)}>بستن</button></div>
-      <div className="exam-mode"><button type="button" disabled={creating} aria-pressed={creationMode === "free"} onClick={() => setCreationMode("free")}>انتخاب آزاد<small>درس و مبحث دلخواه را انتخاب کنید.</small></button><button type="button" disabled>از مطالب مطالعه‌شده<small>بر اساس گزارش‌های مطالعه خود آزمون بسازید.</small><span className="exam-badge">به‌زودی</span></button></div>
-      {creationMode === "free" && <PracticeBuilder token={token} onBusyChange={setCreating} onCreated={exam => { setExams(current => [exam, ...current.filter(row => row.id !== exam.id)]); setShowCreate(false); setSection("practice"); setNotice("آزمون تمرینی ساخته شد. می‌توانید آزمون را شروع کنید."); }}/>}
+
+      <PracticeBuilder token={token} onBusyChange={setCreating} onCreated={exam => { setExams(current => [exam, ...current.filter(row => row.id !== exam.id)]); setShowCreate(false); setSection("practice"); setNotice("آزمون تمرینی ساخته شد. در حال ورود به آزمون…"); setCreatedToStart(exam.id); void startExam(exam.id); }}/>
     </section>}
     <ExamSectionNav sections={[{ value: "active", label: "فعال" }, { value: "practice", label: "تمرین‌های من" }, { value: "results", label: "نتایج" }, { value: "past", label: "گذشته" }]} value={section} onChange={setSection}/>
     {error && <ExamErrorState message={error} onRetry={() => setReload(value => value + 1)}/>}

@@ -481,3 +481,26 @@ body {
 .ws-copy-banner{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:.5rem;padding:.6rem .8rem;background:#e6f3f4;border:1px solid #b8d3d7;border-radius:.5rem;font-size:.82rem}
 @media (max-width: 700px){.ws-hero-stats{gap:.7rem}.ws-toolbar-form{display:grid}.ws-plan-select{width:100%}.ws-box{width:100%}}
 @media (max-width: 700px) { .planning-header { flex-wrap: wrap; } .planning-header nav { order: 3; width: 100%; } .planning-summary { grid-template-columns: 1fr; } .planning-day { grid-template-columns: 1fr; } .planning-day > header { border-left: 0; border-bottom: 1px solid #dce3e8; padding: 0 0 .5rem; } .planning-toolbar form { display: grid; } .planning-toolbar form > label, .planning-toolbar > label { width: 100%; } .workspace-header { align-items: stretch; flex-direction: column; } .workspace-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .workspace-comparison, .workspace-profile { grid-template-columns: 1fr; } .workspace-tabs { margin-inline: -1rem; border-radius: 0; } .workspace-commitments > div { grid-template-columns: 1fr; } }
+
+/* One-tap daily declarations are independent of timer measurements. */
+.report-submission-progress { display: grid; gap: .45rem; padding: .85rem; background: #f0f8f7; border: 1px solid #c5dedc; border-radius: .65rem; }
+.report-submission-progress progress { width: 100%; height: .65rem; accent-color: #0e6477; }
+.report-submission-progress p { margin: 0; }
+.report-status-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .45rem; }
+.report-status-button { min-height: 48px; padding: .6rem .25rem; border: 1px solid #b4c9ce; border-radius: .5rem; color: #274957; background: #fff; font-weight: 600; }
+.report-status-button.is-selected { background: #e3f3f1; border-color: #0e6477; box-shadow: inset 0 0 0 1px #0e6477; }
+.report-status-button:disabled { opacity: .7; cursor: wait; }
+.report-quick-card :is(button, input, summary):focus-visible { outline: 3px solid #1392a5; outline-offset: 3px; }
+.report-save-feedback { min-height: 1.3rem; color: #365b61; font-size: .78rem; }
+.report-save-error { color: #a02d28; font-size: .82rem; }
+.report-save-error button, .report-activity-details summary { min-height: 44px; }
+.report-optional-fields { display: grid; gap: .65rem; border: 0; padding: 0; margin: .6rem 0 0; min-width: 0; }
+.report-optional-fields label { display: grid; gap: .25rem; font-size: .82rem; }
+.report-optional-fields .report-detail-fields label { flex: 1 1 6rem; min-width: 0; }
+.report-optional-fields input { width: 100%; min-width: 0; }
+.report-quick-card .planning-block-detail { margin: 0; }
+@media (max-width: 600px) {
+  .report-quick-card { padding: .7rem; gap: .45rem; }
+  .report-quick-card input { font-size: 16px; }
+  .report-quick-card .report-activity-heading strong { min-width: 50%; overflow-wrap: anywhere; }
+}

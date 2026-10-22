@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { allPages } from "@/lib/api";
 import { persianDate, Plan, planningError } from "@/lib/planning";
-import { useStudentPlanAuth } from "./layout";
+import { useStudentPlanAuth } from "@/lib/studentPlanContext";
 import { tehranTodayIso } from "@/lib/reports";
 
 export default function StudentPlans() {

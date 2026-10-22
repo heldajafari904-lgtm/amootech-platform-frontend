@@ -65,3 +65,27 @@
 @media (max-width: 600px) {
   .counselor-panel .timeline-activity .ws-box-note { font-size: 12px; }
 }
+
+/* Minimal activity dialog, shared by add and edit. */
+.flex-editor-dialog { max-width: 30rem; }
+.flex-activity-editor { gap: 1rem; padding: 0; border: 0; background: white; }
+.flex-editor-fields { display: grid; gap: 1rem; min-width: 0; margin: 0; padding: 0; border: 0; }
+.flex-title-label { display: grid; gap: .4rem; position: sticky; top: 0; z-index: 1; padding-block: .3rem; background: white; font-size: .85rem; }
+.flex-title-label input { width: 100%; padding: .7rem; border: 1px solid #aebbc3; border-radius: .4rem; font-size: 1rem; background: white; }
+.flex-selector-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .5rem; }
+.flex-selector-head h3 { margin: 0; font-size: .85rem; font-weight: 500; }
+.flex-selection { min-width: 0; }
+.flex-choice-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: .5rem; }
+.flex-choice-grid button { min-height: 44px; padding: .65rem; border: 1px solid #c9dadd; border-radius: .4rem; background: white; color: inherit; font: inherit; cursor: pointer; overflow-wrap: anywhere; }
+.flex-choice-grid button[aria-pressed="true"] { border-color: #0e6477; background: #e9f5f6; color: #0e6477; font-weight: 700; }
+.flex-activity-editor :is(input, button):focus-visible { outline: 3px solid #1392a5; outline-offset: 3px; }
+.flex-activity-editor button { min-height: 44px; }
+.flex-activity-editor footer { position: sticky; bottom: 0; background: white; padding-block: .4rem; }
+.flex-activity-editor footer button { width: 100%; }
+.flex-editor-fields:disabled { opacity: .75; }
+.flex-catalog-error { font-size: .8rem; }
+.flex-catalog-error p { margin: 0 0 .4rem; }
+@media (max-width: 480px) {
+  .flex-editor-dialog { max-height: 94dvh; padding: .75rem; }
+  .flex-choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

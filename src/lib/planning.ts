@@ -36,7 +36,11 @@ export type SchoolSlot = {
 };
 
 export type Kind = "STUDY" | "TEST" | "REVIEW" | "EXAM" | "EVENT";
+export type PlanningTaxonomy = { provider: "quiz24"; grade?: number; course?: number; chapter?: number; subject?: number; object?: number; labels?: Partial<Record<"grade" | "course" | "chapter" | "subject" | "object", string>> } | Record<string, never>;
 export type PlanItem = {
+  taxonomy?: PlanningTaxonomy;
+  title_is_custom?: boolean;
+  generated_title?: string;
   id: number;
   plan_day: number;
   kind: Kind;

@@ -7,7 +7,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:planner": "node --experimental-strip-types --test tests/planner-time.test.mjs"
+    "test:question-bank": "node --experimental-strip-types --test tests/question-bank.test.mjs tests/exam-builder.test.mjs tests/student-exams.test.mjs",
+    "test:question-bank:browser": "RUN_QUESTION_BANK_BROWSER=1 node --test tests/question-bank-browser.test.mjs",
+    "test:reports:browser": "RUN_REPORT_BROWSER=1 node --test tests/report-quick-browser.test.mjs",
+    "test:reports": "node --experimental-strip-types --test tests/report-quick.test.mjs",
+    "test:planner": "node --experimental-strip-types --test tests/planner-time.test.mjs tests/planner-content.test.mjs tests/activity-catalog.test.mjs",
+    "test:planner:browser": "RUN_PLANNER_BROWSER=1 node --test tests/planner-content-browser.test.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

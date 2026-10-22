@@ -6,7 +6,7 @@ import { minutesText } from "@/lib/dailyReports";
 import { persianDate } from "@/lib/planning";
 import { daysAgoIso, tehranTodayIso, type ReportResponse } from "@/lib/reports";
 import { PlannedActualChart, ReportInsights, ReportSummary, SubjectDistribution, TrendChart } from "@/components/ReportVisuals";
-import { useStudentPlanAuth } from "../layout";
+import { useStudentPlanAuth } from "@/lib/studentPlanContext";
 
 type Period = "seven" | "thirty" | "custom";
 

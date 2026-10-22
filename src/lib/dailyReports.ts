@@ -1,6 +1,8 @@
 import type { Kind, Student } from "@/lib/planning";
 
 export type DailyReportItem = {
+  reported_status?: "COMPLETED" | "PARTIAL" | "NOT_DONE" | null;
+  taxonomy?: import("@/lib/planning").PlanningTaxonomy;
   id: number;
   source: "WEB" | "TELEGRAM";
   execution_source: "WEB" | "TELEGRAM" | null;
@@ -29,6 +31,8 @@ export type DailyReportItem = {
   execution_status: "NOT_STARTED" | "IN_PROGRESS" | "PAUSED" | "COMPLETED" | "PARTIAL" | "NOT_DONE" | "UNPLANNED";
 };
 export type DailyReport = {
+  editable?: boolean;
+  reporting_progress?: { reported: number; total: number };
   id: number;
   source: "WEB" | "TELEGRAM";
   student: number;

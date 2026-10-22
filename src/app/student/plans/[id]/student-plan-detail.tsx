@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { downloadPlanExport, persianDate, Plan, PlanItemExecution, planningError, weekDates } from "@/lib/planning";
-import { useStudentPlanAuth } from "../layout";
+import { useStudentPlanAuth } from "@/lib/studentPlanContext";
 import PlanBlock from "../PlanBlock";
 import ExecutionControls from "../ExecutionControls";
 import ManualPerformance from "../ManualPerformance";

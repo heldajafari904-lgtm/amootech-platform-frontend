@@ -104,7 +104,7 @@ export default function PlanBuilder({ studentId }: { studentId: string }) {
     try {
       await api("/planning/items/", token, "POST", {
         plan_day: day.id, kind: item.kind, ordering: Math.max(-1, ...day.items.map((row) => row.ordering)) + 1,
-        title: item.title, planned_duration_minutes: item.planned_duration_minutes,
+        ...(item.title_is_custom === false ? {} : { title: item.title }), taxonomy: item.taxonomy ?? {}, planned_duration_minutes: item.planned_duration_minutes,
         start_time: item.start_time, end_time: item.end_time, note: item.note,
         subject: item.subject, chapter: item.chapter, topic: item.topic, test_count: item.test_count,
       });

@@ -1,15 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { createContext, useContext, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { StudentPlanContext } from "@/lib/studentPlanContext";
 import { accessToken, api, clearSession, errorMessage, obtainTokenPair, onSessionExpired, saveSession, SESSION_EXPIRED, User } from "@/lib/api";
-
-const StudentPlanContext = createContext<{ token: string; user: User } | null>(null);
-export function useStudentPlanAuth() {
-  const value = useContext(StudentPlanContext);
-  if (!value) throw new Error("Student plan context is unavailable");
-  return value;
-}
 
 export default function StudentPlansLayout({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState("");
