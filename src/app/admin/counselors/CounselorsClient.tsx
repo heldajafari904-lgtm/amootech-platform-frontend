@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { api, Page, errorMessage } from "@/lib/api";
-import { formatJalali } from "@/lib/planning";
+import { formatTehranDate } from "@/lib/planning";
 
 type Row = {
   id:number;
@@ -53,7 +53,7 @@ export default function CounselorsClient(){
            rows.map(r=><tr key={r.id}>
             <td><strong>{r.user.first_name} {r.user.last_name} <small style={{color:"#64748b"}}>@{r.user.username}</small></strong></td>
             <td><span className={`admin-badge ${r.user.is_active?"ok":"bad"}`}>{r.user.is_active?"فعال":"غیرفعال"}</span></td>
-            <td>{r.user.date_joined ? formatJalali(r.user.date_joined.slice(0,10), false) : "—"}</td>
+            <td>{r.user.date_joined ? formatTehranDate(r.user.date_joined) : "—"}</td>
             <td><span className="admin-badge purple">{(r.students_count??0).toLocaleString("fa-IR")} نفر</span></td>
             <td>{(r.active_students_count??0).toLocaleString("fa-IR")}</td>
             <td><Link href={`/admin/counselors/${r.id}`} style={{border:"1px solid #cbd5e1", padding:".25rem .5rem", borderRadius:".35rem", textDecoration:"none", color:"var(--brand-purple)"}}>جزئیات</Link></td>

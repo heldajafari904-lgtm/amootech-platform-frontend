@@ -12,10 +12,15 @@
     "test:reports:browser": "RUN_REPORT_BROWSER=1 node --test tests/report-quick-browser.test.mjs",
     "test:reports": "node --experimental-strip-types --test tests/report-quick.test.mjs",
     "test:planner": "node --experimental-strip-types --test tests/planner-time.test.mjs tests/planner-content.test.mjs tests/activity-catalog.test.mjs",
-    "test:planner:browser": "RUN_PLANNER_BROWSER=1 node --test tests/planner-content-browser.test.mjs"
+    "test:planner:browser": "RUN_PLANNER_BROWSER=1 node --test tests/planner-content-browser.test.mjs",
+    "test:calendar": "node --experimental-strip-types --test tests/jalali-time.test.mjs",
+    "test:sprint-a:browser": "RUN_SPRINT_A_BROWSER=1 node --test tests/sprint-a-live-browser.test.mjs",
+    "test:exam-basket": "node --experimental-strip-types --test tests/selection-basket.test.mjs",
+    "test:sprint-b:browser": "RUN_SPRINT_B_BROWSER=1 node --test tests/sprint-b-live-browser.test.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
+    "jalaali-js": "^2.0.1",
     "next": "16.3.5",
     "react": "19.2.8",
     "react-dom": "19.2.8"

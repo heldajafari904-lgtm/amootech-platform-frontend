@@ -39,7 +39,7 @@ test('real courseDetail and persisted taxonomy keep provider ancestry',()=>{
 test('missing profile metadata, failed envelopes and empty catalogs remain distinct',()=>{
  assert.throws(()=>activityGrades(canonical,{grade:null},provider),/پایه معتبر/);
  assert.throws(()=>activityGrades(canonical,{grade:1010},provider),/رشته معتبر/);
- assert.deepEqual(activityGrades(canonical,contract.profiles[0],catalogOptions({status:100,result:[]},'grade')),[]);
+ assert.throws(()=>activityGrades(canonical,contract.profiles[0],catalogOptions({status:100,result:[]},'grade')),/همگام‌سازی/);
  assert.throws(()=>catalogOptions({status:500,result:[]},'grade'),/معتبر نیست/);
  assert.throws(()=>catalogOptions({detail:'unavailable'},'grade'),/معتبر نیست/);
  assert.throws(()=>catalogOptions({status:100,result:[{id:11}]},'grade'),/معتبر نیست/);

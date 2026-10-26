@@ -12,10 +12,10 @@ function render(state) {
   class Session extends analytics.AnalyticsSession { constructor(...args) { super(...args); this.state = { ...this.state, ...state }; } }
   const source = readFileSync(new URL('../src/app/counselor/exams/AnalyticsPanel.tsx', import.meta.url), 'utf8');
   const js = ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
-  const module = { exports: {} };
+  const loaded = { exports: {} };
   const localRequire = name => name === './analytics' ? { ...analytics, AnalyticsSession: Session } : name === '@/lib/api' ? { api: () => { throw new Error('No network in render test'); } } : name === '@/components/exams/schedule' ? { examDateTime } : name === '@/components/exams/ExamUI' ? { ResultDetails: () => createElement('div') } : require(name);
-  new Function('require', 'module', 'exports', js)(localRequire, module, module.exports);
-  return renderToStaticMarkup(createElement(module.exports.default, { examId: 7, token: 'private-token' }));
+  new Function('require', 'module', 'exports', js)(localRequire, loaded, loaded.exports);
+  return renderToStaticMarkup(createElement(loaded.exports.default, { examId: 7, token: 'private-token' }));
 }
 const metrics = { assigned: 1, completed: 1, valid_scored: 1, participation_percentage: 100, average_score: 80, median_score: 80, highest_score: 80, lowest_score: 80, average_quiz24_balance: null, balance_contributors: 0, answer_counts: {}, distribution: [{ lower: 80, upper: 80, count: 1, upper_inclusive: true }] };
 const data = { count: 1, results: [{ student: 1, student_name: 'دانش‌آموز نمونه', score: 80, quiz24_balance: null, group_rank: 1, provider_rank: 7, provider_rank_in_class: 3, status: 'SCORED', stale: true, verified_at: null, details_available: true }], metrics, score_scale: { label: 'نمره خام Quiz24؛ مقیاس اعلام نشده' }, ranking: { provisional: true }, fresh: false, partial: false, last_success_at: null, remaining_in_cycle: 0, last_error_count: 0 };

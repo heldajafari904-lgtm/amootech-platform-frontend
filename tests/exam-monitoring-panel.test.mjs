@@ -13,10 +13,10 @@ function render(state) {
   class Session extends monitoring.MonitoringSession { constructor(...args) { super(...args); this.state = { ...this.state, ...state }; } }
   const source = readFileSync(new URL('../src/app/counselor/exams/MonitoringPanel.tsx', import.meta.url), 'utf8');
   const js = ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
-  const module = { exports: {} };
+  const loaded = { exports: {} };
   const localRequire = name => name === './monitoring' ? { ...monitoring, MonitoringSession: Session } : name === '@/lib/api' ? { api: () => { throw new Error('No network in render test'); } } : name === '@/components/exams/schedule' ? { examDateTime } : require(name);
-  new Function('require', 'module', 'exports', js)(localRequire, module, module.exports);
-  return renderToStaticMarkup(createElement(module.exports.default, { examId: 7, token: 'private-token' }));
+  new Function('require', 'module', 'exports', js)(localRequire, loaded, loaded.exports);
+  return renderToStaticMarkup(createElement(loaded.exports.default, { examId: 7, token: 'private-token' }));
 }
 const data = { summary, count: 1, results: [{ student: 1, student_name: 'دانش‌آموز نمونه', status: 'UNKNOWN', last_known_status: 'IN_PROGRESS', started_at: null, completed_at: null, absent: false, warnings: ['اتصال تأییدشده کامل نیست.'], local_attempt: { status: 'PENDING', requested_at: null } }], fresh: false, partial: true, last_success_at: null, availability: { label: 'آماده شرکت' }, error: 'سرویس در دسترس نیست.', next: null, previous: null };
 test('loading, manual sync and retry feedback are accessible', () => {

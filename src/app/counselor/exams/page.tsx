@@ -13,9 +13,11 @@ import AnalyticsPanel from "./AnalyticsPanel";
 import ManagementPanel from "./ManagementPanel";
 import { useCounselor } from "@/lib/counselorContext";
 
-import { field as taxonomyField, options as taxonomyOptions, courseDetail, hierarchySelection, coursesForGrade, type Option as TaxonomyOption } from "@/components/exams/taxonomy";
+import { field as taxonomyField } from "@/components/exams/taxonomy";
 import { returnedManualExam, clearManualExam, safePDFUrl } from "@/components/exams/manualFlow";
 import { creationRequest, creationComplete } from "@/components/exams/creation";
+
+import ExamBasketBuilder from "@/components/exams/ExamBasketBuilder";
 
 type Student = { id: number; user: User };
 type Grade = { id: number; name: string };
@@ -35,144 +37,6 @@ function providerGrades(response: unknown): Grade[] {
     if (!Number.isInteger(id) || id <= 0 || typeof name !== "string") throw new Error("اطلاعات پایه آزمون‌ساز معتبر نیست.");
     return { id, name };
   });
-}
-
-type Difficulty = "easy" | "medium" | "hard" | "very_hard";
-type Inventory = Record<Difficulty, number>;
-const difficulties: { key: Difficulty; label: string }[] = [
-  { key: "easy", label: "آسان" }, { key: "medium", label: "متوسط" },
-  { key: "hard", label: "سخت" }, { key: "very_hard", label: "خیلی سخت" },
-];
-
-function AutomaticExamForm({ token, student, grades, onCreated, onBusyChange }: { token: string; student: string; grades: Grade[]; onCreated: (exam: Exam) => void; onBusyChange: (busy: boolean) => void }) {
-  const [title, setTitle] = useState("");
-  const [grade, setGrade] = useState("");
-  const [courses, setCourses] = useState<TaxonomyOption[]>([]);
-  const [course, setCourse] = useState("");
-  const [detail, setDetail] = useState<{ grade: string; course: string; considerUsed: boolean; data: unknown } | null>(null);
-  const [chapter, setChapter] = useState("");
-  const [subject, setSubject] = useState("");
-  const [object, setObject] = useState("");
-  const [questionType, setQuestionType] = useState("1");
-  const [duration, setDuration] = useState("60");
-  const [negativeScore, setNegativeScore] = useState(false);
-  const [fromYear, setFromYear] = useState("");
-  const [toYear, setToYear] = useState("");
-  const [considerUsed, setConsiderUsed] = useState(false);
-  const [counts, setCounts] = useState<Record<Difficulty, string>>({ easy: "0", medium: "0", hard: "0", very_hard: "0" });
-  const [inventory, setInventory] = useState<{ key: string; counts: Inventory } | null>(null);
-  const [error, setError] = useState("");
-  const [providerRevision, setProviderRevision] = useState(0);
-  const [coursesLoaded, setCoursesLoaded] = useState(false);
-  const [courseError, setCourseError] = useState("");
-  const [taxonomyError, setTaxonomyError] = useState("");
-  const [inventoryError, setInventoryError] = useState("");
-  const [inventoryRevision, setInventoryRevision] = useState(0);
-  const [busy, setBusy] = useState(false);
-  const lock = useRef(false);
-  const courseOptions = coursesForGrade(courses, grade);
-  const taxonomy = detail?.course === course && detail.grade === grade && detail.considerUsed === considerUsed ? detail.data : null;
-  const { chapters, subjects, objects, valid: hierarchyValid } = hierarchySelection(taxonomy, chapter, subject, object);
-  const filters = {
-    grade_id: Number(grade), course_id: Number(course), question_type: Number(questionType),
-    chapter_ids: chapter ? [Number(chapter)] : [], subject_ids: subject ? [Number(subject)] : [], object_ids: object ? [Number(object)] : [],
-    ...(fromYear ? { from_year: Number(fromYear) } : {}), ...(toYear ? { to_year: Number(toYear) } : {}),
-    consider_used_question: considerUsed,
-  };
-  const inventoryKey = JSON.stringify(filters);
-  const available = inventory?.key === inventoryKey ? inventory.counts : null;
-  const selectionValid = !!grade && !!course && courseOptions.some(row => String(row.id) === course) && taxonomy !== null && hierarchyValid;
-  const countsValid = difficulties.every(({ key }) => counts[key] !== "" && Number.isInteger(Number(counts[key])) && Number(counts[key]) >= 0 && available !== null && Number(counts[key]) <= available[key]);
-  const total = difficulties.reduce((sum, { key }) => sum + Number(counts[key]), 0);
-
-  useEffect(() => {
-    let live = true;
-    api<unknown>("/exams/provider/courses/", token).then(response => {
-      const result = taxonomyField(response, "result", "data") ?? response;
-      const rows = Array.isArray(result) ? result : taxonomyField(result, "courses");
-      const options = taxonomyOptions(rows, "course");
-      if (!Array.isArray(rows)) throw new Error("ساختار فهرست درس‌های آزمون‌ساز معتبر نیست.");
-      if (live) { setCourses(options); setCoursesLoaded(true); setCourseError(""); }
-    }).catch(reason => { if (live) setCourseError(errorMessage(reason)); });
-    return () => { live = false; };
-  }, [token, providerRevision]);
-
-  useEffect(() => {
-    if (!grade || !course) return;
-    let live = true;
-    api<unknown>("/exams/provider/course-detail/", token, "POST", { grade_id: Number(grade), course_id: Number(course), consider_used_question: considerUsed }).then(response => {
-      const data = courseDetail(response, Number(course));
-      if (live) { setDetail({ grade, course, considerUsed, data }); setTaxonomyError(""); }
-    }).catch(reason => { if (live) setTaxonomyError(errorMessage(reason)); });
-    return () => { live = false; };
-  }, [token, grade, course, considerUsed, providerRevision]);
-
-  useEffect(() => {
-    if (!selectionValid) return;
-    let live = true;
-    const timer = setTimeout(() => {
-      setInventoryError("");
-      api<Inventory>("/exams/provider/question-count/", token, "POST", JSON.parse(inventoryKey)).then(response => {
-        if (!difficulties.every(({ key }) => Number.isInteger(response[key]) && response[key] >= 0)) throw new Error("موجودی سوال‌ها معتبر نیست.");
-        if (!live) return;
-        setInventory({ key: inventoryKey, counts: response });
-        setCounts(current => ({
-          easy: String(Math.min(Number(current.easy) || 0, response.easy)), medium: String(Math.min(Number(current.medium) || 0, response.medium)),
-          hard: String(Math.min(Number(current.hard) || 0, response.hard)), very_hard: String(Math.min(Number(current.very_hard) || 0, response.very_hard)),
-        }));
-      }).catch(reason => { if (live) setInventoryError(errorMessage(reason)); });
-    }, 300);
-    return () => { live = false; clearTimeout(timer); };
-  }, [token, inventoryKey, selectionValid, inventoryRevision]);
-
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (lock.current || !selectionValid || !countsValid || total <= 0) return;
-    lock.current = true; setBusy(true); onBusyChange(true); setError("");
-    try {
-      const { grade_id, ...filterData } = filters;
-      const exam = await api<Exam>("/exams/automatic/", token, "POST", creationRequest({
-        ...filterData, grade_external_id: grade_id, student: student ? Number(student) : null,
-        title: title.trim(), duration_minutes: Number(duration), has_negative_score: negativeScore,
-        easy_count: Number(counts.easy), medium_count: Number(counts.medium), hard_count: Number(counts.hard), very_hard_count: Number(counts.very_hard),
-      }, sessionStorage, "counselor"));
-      creationComplete(sessionStorage, "counselor");
-      onCreated(exam); setTitle(""); setInventory(null); setInventoryRevision(value => value + 1);
-    } catch (reason) { setError(errorMessage(reason)); setInventory(null); setInventoryRevision(value => value + 1); }
-    finally { lock.current = false; setBusy(false); onBusyChange(false); }
-  }
-
-  return <form onSubmit={submit} className="exam-form">
-    {(error || courseError || taxonomyError || inventoryError) && <p className="exam-feedback" role="alert">{error || courseError || taxonomyError || inventoryError}</p>}
-    {(courseError || taxonomyError) && <button className="exam-secondary" type="button" onClick={() => { setCoursesLoaded(false); setCourseError(""); setTaxonomyError(""); setDetail(null); setProviderRevision(value => value + 1); }}>دریافت دوباره درس‌ها و مبحث‌ها</button>}
-    <fieldset disabled={busy}>
-      <legend>تنظیمات آزمون خودکار</legend>
-      <label>عنوان آزمون<input required maxLength={200} value={title} onChange={event => setTitle(event.target.value)}/></label>
-      <label>پایه<select required value={grade} onChange={event => { setGrade(event.target.value); setCourse(""); setDetail(null); setTaxonomyError(""); setInventoryError(""); setChapter(""); setSubject(""); setObject(""); }}><option value="">انتخاب پایه</option>{grades.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
-      {!coursesLoaded && !courseError && <p role="status" className="exam-muted">در حال دریافت درس‌ها…</p>}
-      {grade && coursesLoaded && !courseOptions.length && <p className="exam-muted">برای این پایه درسی موجود نیست.</p>}
-      <label>درس<select required disabled={!grade} value={course} onChange={event => { setCourse(event.target.value); setDetail(null); setTaxonomyError(""); setInventoryError(""); setChapter(""); setSubject(""); setObject(""); }}><option value="">انتخاب درس</option>{courseOptions.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
-      {course && !taxonomy && !taxonomyError && <p role="status" className="exam-muted">در حال دریافت مبحث‌ها…</p>}
-      {taxonomy !== null && !chapters.length && <p className="exam-muted">برای این درس فصل یا مبحثی موجود نیست؛ انتخاب همه سؤال‌ها امکان‌پذیر است.</p>}
-      {chapter && !subjects.length && <p className="exam-muted">این فصل مبحثی ندارد.</p>}
-      {subject && !objects.length && <p className="exam-muted">این مبحث زیرمبحثی ندارد.</p>}
-      {taxonomy !== null && !hierarchyValid && <p role="alert">انتخاب مبحث معتبر نیست؛ دوباره انتخاب کنید.</p>}
-      <label>فصل<select disabled={!taxonomy} value={chapter} onChange={event => { setChapter(event.target.value); setSubject(""); setObject(""); }}><option value="">همه فصل‌ها</option>{chapters.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
-      <label>مبحث<select disabled={!chapter || !subjects.length} value={subject} onChange={event => { setSubject(event.target.value); setObject(""); }}><option value="">همه مبحث‌ها</option>{subjects.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
-      <label>زیرمبحث<select disabled={!subject || !objects.length} value={object} onChange={event => setObject(event.target.value)}><option value="">همه زیرمبحث‌ها</option>{objects.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
-      <label>نوع سوال<select value={questionType} onChange={event => setQuestionType(event.target.value)}><option value="1">تستی</option><option value="2">تشریحی</option></select></label>
-      <label>از سال<input type="number" min={1} max={9999} step={1} value={fromYear} onChange={event => setFromYear(event.target.value)}/></label>
-      <label>تا سال<input type="number" min={fromYear || 1} max={9999} step={1} value={toYear} onChange={event => setToYear(event.target.value)}/></label>
-      <label><input type="checkbox" checked={considerUsed} onChange={event => { setConsiderUsed(event.target.checked); setDetail(null); setTaxonomyError(""); setInventoryError(""); setChapter(""); setSubject(""); setObject(""); }}/> درنظرگرفتن سوال‌های استفاده‌شده</label>
-      <div className="exam-wide exam-muted" role="status">{available ? difficulties.map(({ key, label }) => <span key={key} style={{ marginInlineEnd: 16 }}>{label}: {available[key].toLocaleString("fa-IR")}</span>) : selectionValid && !inventoryError ? "در حال دریافت موجودی…" : "برای دریافت موجودی، پایه و درس را انتخاب کنید."}</div>
-      {selectionValid && inventoryError && <button type="button" onClick={() => setInventoryRevision(value => value + 1)}>دریافت دوباره موجودی</button>}
-      <div className="exam-difficulties">{difficulties.map(({ key, label }) => <label key={key}>{label}<input aria-label={`تعداد سوال ${label}`} type="number" required min={0} max={available?.[key] ?? 0} step={1} disabled={!available} value={counts[key]} onChange={event => setCounts(current => ({ ...current, [key]: event.target.value }))}/><small>{counts[key] || "۰"} از {available?.[key].toLocaleString("fa-IR") ?? "—"} سوال</small></label>)}</div>
-      <div className="exam-total"><strong>{total.toLocaleString("fa-IR")} سوال انتخاب‌شده</strong><span>مدت آزمون: {duration || "—"} دقیقه</span></div>
-      <label>زمان آزمون (دقیقه)<input required type="number" min={1} step={1} value={duration} onChange={event => setDuration(event.target.value)}/></label>
-      <label><input type="checkbox" checked={negativeScore} onChange={event => setNegativeScore(event.target.checked)}/> نمره منفی</label>
-      <div className="exam-wide"><button className="exam-primary" type="submit" disabled={busy || !selectionValid || !countsValid || total <= 0 || !title.trim()}>{busy ? "در حال ساخت…" : "ساخت آزمون خودکار"}</button></div>
-    </fieldset>
-  </form>;
 }
 
 export default function CounselorExams() {
@@ -197,6 +61,12 @@ export default function CounselorExams() {
   const [resultBusy, setResultBusy] = useState(new Set<number>());
   const [results, setResults] = useState<Record<number, ExamResult>>({});
   const [student, setStudent] = useState("");
+  const [studentIds, setStudentIds] = useState<number[]>([]);
+  useEffect(()=>{
+    let live=true;
+    queueMicrotask(()=>{try{const ids=JSON.parse(sessionStorage.getItem(`counselor-exam-recipients:${user.id}`)||'[]');if(live&&Array.isArray(ids)&&ids.every(id=>Number.isSafeInteger(id)&&id>0)){setStudentIds(ids);setStudent(ids.length===1?String(ids[0]):'')}}catch{/* Ignore malformed recipient drafts. */}});
+    return()=>{live=false};
+  },[user.id]);
   const [title, setTitle] = useState("");
   const [grade, setGrade] = useState("");
   const [questionType, setQuestionType] = useState("1");
@@ -205,7 +75,7 @@ export default function CounselorExams() {
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [resultErrors, setResultErrors] = useState<Record<number, string>>({});
   const [filters, setFilters] = useState(emptyFilters);
-  const [studentStepComplete, setStudentStepComplete] = useState(false);
+  const [studentStepComplete, setStudentStepComplete] = useState(true);
   const [studentsLoading, setStudentsLoading] = useState(true);
   const [studentError, setStudentError] = useState("");
   const [participantsOpen, setParticipantsOpen] = useState(false);
@@ -224,7 +94,7 @@ export default function CounselorExams() {
   const [recentExam, setRecentExam] = useState<Exam | null>(null);
   const [providerReady, setProviderReady] = useState<boolean | null>(null);
   const [reload, setReload] = useState(0);
-  const [creationMode, setCreationMode] = useState<"manual" | "automatic" | null>(null);
+  const [creationMode, setCreationMode] = useState<"manual" | "automatic" | null>("automatic");
 
   useEffect(() => {
     if (!showCreate) return;
@@ -348,7 +218,7 @@ export default function CounselorExams() {
   const hasFilters = Object.values(filters).some(Boolean);
 
   function openCreate() {
-    setStudent(filters.student); setStudentStepComplete(false); setCreationMode(null); setShowCreate(true);
+    if(filters.student){setStudent(filters.student);setStudentIds([Number(filters.student)])} setStudentStepComplete(true); setCreationMode("automatic"); setShowCreate(true);
   }
 
   function primaryAction(exam: Exam) {
@@ -370,8 +240,7 @@ export default function CounselorExams() {
     <section className="exam-create" id="exam-creation" hidden={!showCreate} aria-label="ساخت آزمون">
       <div className="exam-section-heading"><h2>آزمون جدید</h2><button className="exam-secondary" type="button" disabled={creating || automaticBusy} onClick={() => setShowCreate(false)}>بستن</button></div>
       <div className="exam-form exam-creation-student">
-        <label>۱. برای چه دانش‌آموزی؟<select value={student} disabled={creating || automaticBusy || studentsLoading || !!studentError} onChange={event => { setStudent(event.target.value); setStudentStepComplete(false); setCreationMode(null); }}><option value="">بدون تخصیص به دانش‌آموز</option>{students.map(row => <option key={row.id} value={row.id}>{studentName(row)}</option>)}</select></label>
-        {!studentStepComplete && <button className="exam-secondary" type="button" disabled={studentsLoading || !!studentError} onClick={() => setStudentStepComplete(true)}>{studentsLoading ? "در حال دریافت دانش‌آموزان…" : "ادامه و انتخاب روش ساخت"}</button>}
+        <strong>دانش‌آموزان آزمون</strong><div className="basket-tiles" role="group" aria-label="دانش‌آموزان آزمون">{students.map(row=><button type="button" key={row.id} disabled={creating||automaticBusy} aria-pressed={studentIds.includes(row.id)} onClick={()=>{const ids=studentIds.includes(row.id)?studentIds.filter(id=>id!==row.id):[...studentIds,row.id];setStudentIds(ids);sessionStorage.setItem(`counselor-exam-recipients:${user.id}`,JSON.stringify(ids));setStudent(ids.length===1?String(ids[0]):'');setStudentStepComplete(true)}}>{studentName(row)}</button>)}</div>
       </div>
       {studentError && <ExamErrorState message={studentError} onRetry={() => setReload(value => value + 1)}/>}
       {studentStepComplete && <><h3 className="exam-creation-step-title">۲. روش ساخت آزمون</h3><div className="exam-mode"><button type="button" aria-pressed={creationMode === "manual"} disabled={creating || automaticBusy} onClick={() => setCreationMode("manual")}>انتخاب دستی سوال<small>سوال‌های آزمون را در آزمون‌ساز انتخاب کنید.</small></button><button type="button" aria-pressed={creationMode === "automatic"} disabled={creating || automaticBusy} onClick={() => setCreationMode("automatic")}>ساخت خودکار<small>آزمون را بر اساس درس، مبحث و سطح دشواری بسازید.</small></button></div></>}
@@ -385,7 +254,7 @@ export default function CounselorExams() {
           <label>زمان آزمون (دقیقه)<input required type="number" min={1} step={1} value={duration} onChange={event => setDuration(event.target.value)} disabled={creating}/></label>
           <label><input type="checkbox" checked={negativeScore} onChange={event => setNegativeScore(event.target.checked)} disabled={creating}/> نمره منفی</label>
           <div className="exam-wide"><button className="exam-primary" type="submit" disabled={creating || !grades.length || !title.trim()}>{creating ? "در حال ساخت…" : "ساخت آزمون"}</button></div>
-        </form> : <AutomaticExamForm onBusyChange={setAutomaticBusy} token={token} student={student} grades={grades} onCreated={exam => { setExams(current => [exam, ...current]); setNotice("آزمون ساخته شد"); setShowCreate(false); setRecentExam(null); }}/>}
+        </form> : <ExamBasketBuilder<Exam> mode="counselor" onBusyChange={setAutomaticBusy} token={token} studentIds={studentIds} onCreated={exam => { setExams(current => [exam, ...current]); setNotice("آزمون ساخته شد"); setShowCreate(false); setRecentExam(null); }}/>}
     </section>
     <ExamSectionNav sections={[{ value: "all", label: "نمای کلی" }, { value: "active", label: "آزمون‌های فعال" }, { value: "results", label: "نتایج" }, { value: "archive", label: "آرشیو" }, { value: "trash", label: "سطل زباله" }]} value={section} onChange={setSection}/>
     <details className="exam-workspace-filters" open={filtersOpen} onToggle={event => setFiltersOpen(event.currentTarget.open)}>

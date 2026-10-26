@@ -39,14 +39,14 @@ test('expired login preserves only the UUID edit fence and owned-exam context', 
 function render(data) {
   const source = readFileSync(new URL('../src/app/counselor/exams/ManagementPanel.tsx', import.meta.url), 'utf8');
   const js = ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
-  const module = { exports: {} }; let index = 0;
+  const loaded = { exports: {} }; let index = 0;
   const localRequire = name => name === 'react' ? { ...React, useState: initial => React.useState(index++ === 0 ? data : initial) }
     : name === '@/lib/api' ? { api: () => { throw new Error('No network'); }, allPages: () => { throw new Error('No network'); } }
     : name === '@/components/counselor/PanelUI' ? { useDialogFocus() {} }
     : name === '@/components/exams/ExamUI' ? { examDate: value => value }
     : name === '@/components/exams/manualFlow' ? {} : require(name);
-  new Function('require', 'module', 'exports', js)(localRequire, module, module.exports);
-  return renderToStaticMarkup(React.createElement(module.exports.default, { examId: 1, token: 'secret-token', userId: 1, onClose() {}, onChanged() {} }));
+  new Function('require', 'module', 'exports', js)(localRequire, loaded, loaded.exports);
+  return renderToStaticMarkup(React.createElement(loaded.exports.default, { examId: 1, token: 'secret-token', userId: 1, onClose() {}, onChanged() {} }));
 }
 test('management dialog exposes limits, disabled actions and no provider deletion by default', () => {
   const html = render({ exam, busy: false, can_publish: true, can_edit_questions: false, can_unpublish: false, can_remote_delete: false, edit_explanation: 'ویرایش مجاز نیست', reset_explanation: 'بازنشانی پشتیبانی نمی‌شود', operation: null });

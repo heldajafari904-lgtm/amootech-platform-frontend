@@ -1,7 +1,8 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
-import { api } from "@/lib/api";
-import { applyStudentFixed, commitmentLabel, type Commitment, type SchoolSlot, WEEKDAY_ORDER } from "@/lib/planning";
+import JalaliDateInput from "@/components/JalaliDateInput";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { api, allPages } from "@/lib/api";
+import { tehranTodayISO, weekdayIndex, persianDate, applyStudentFixed, commitmentLabel, type Commitment, type SchoolSlot, WEEKDAY_ORDER } from "@/lib/planning";
 import { planningApi } from "./planningApi";
 import { apiErrorMessage } from "./planningFeedback";
 import ApplyFixedButton from "./ApplyFixedButton";
@@ -19,7 +20,7 @@ function timeToMins(t: string) { const [h,m]=t.split(":").map(Number); return h*
 function minsToTime(m: number){ const total = ((m % (24*60)) + 24*60) % (24*60); return `${String(Math.floor(total/60)).padStart(2,"0")}:${String(total%60).padStart(2,"0")}`; }
 function durationLabel(mins:number){ if(mins===90) return "۹۰ دقیقه"; if(mins===45) return "۴۵ دقیقه"; return `${mins} دقیقه`; }
 
-type FixedEvent = { id: number; student: number; title: string; date: string; start_time: string; end_time: string; active: boolean };
+type FixedEvent = { id: number; student: number; title: string; date: string | null; kind: "EVENT" | "EXAM" | "QUIZ"; weekday: number | null; valid_from: string | null; valid_until: string | null; start_time: string | null; end_time: string | null; active: boolean };
 const DAY_TABS = WEEKDAY_ORDER as unknown as number[];
 
 export default function FixedSchedulePanel({ token, studentId, commitments, schoolSlots, onRefresh: refreshSources, planId }: { token: string; studentId: string; commitments: Commitment[]; schoolSlots: SchoolSlot[]; onRefresh: () => void | Promise<void>; planId?: number }) {
@@ -48,6 +49,15 @@ export default function FixedSchedulePanel({ token, studentId, commitments, scho
   const [evStart, setEvStart] = useState("17:00");
   const [evEnd, setEvEnd] = useState("18:30");
 
+  const panel = useRef<HTMLElement>(null);
+  const eventSaving = useRef(false);
+  const [eventBusy, setEventBusy] = useState(false);
+  const [eventId, setEventId] = useState<number | null>(null);
+  const [eventKind, setEventKind] = useState<FixedEvent['kind']>('EXAM');
+  const [recurringEvent, setRecurringEvent] = useState(false);
+  const [eventDate, setEventDate] = useState(tehranTodayISO);
+  const [validFrom, setValidFrom] = useState('');
+  const [validUntil, setValidUntil] = useState('');
   // other recurring
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState<Commitment["kind"]>("CLASS");
@@ -67,12 +77,11 @@ export default function FixedSchedulePanel({ token, studentId, commitments, scho
   function notify(msg:string){ setNotice(msg); setTimeout(()=>setNotice(""),2500); }
 
   useEffect(()=>{
-    const normalize = (v: unknown): FixedEvent[] => {
-      if (Array.isArray(v)) return v as FixedEvent[];
-      if (v && typeof v === "object" && "results" in (v as Record<string, unknown>)) return ((v as Record<string, unknown>).results as FixedEvent[]) ?? [];
-      return [];
-    };
-    api<FixedEvent[] | {results: FixedEvent[]}>(`/planning/fixed-events/?student=${sid}`, token).catch(async()=>{ const{allPages}=await import("@/lib/api"); return allPages<FixedEvent>(`/planning/fixed-events/?student=${sid}`, token);}).then(v=> setEvents(normalize(v))).catch(()=> setEvents([]));
+    let live = true;
+    allPages<FixedEvent>(`/planning/fixed-events/?student=${sid}`, token)
+      .then(rows => { if (live) setEvents(rows); })
+      .catch(reason => { if (live) setError(apiErrorMessage(reason)); });
+    return () => { live = false; };
   },[sid, token, commitments]);
 
   // infer preset from loaded slots when switching day (detect 45 vs 90 vs custom)
@@ -209,15 +218,24 @@ function applySequential(list:{period:number; subject_name:string; start_time:st
   }
 
   async function submitEvent(){
+    if (Array.from(panel.current?.querySelectorAll<HTMLInputElement>('input') || []).some(input=>!input.reportValidity())) return;
     if(!evTitle.trim()){ setError("عنوان رویداد را وارد کنید."); return; }
-    // map evDay to a date: use next occurrence of that weekday for recurring-like? Instead use picker hidden: we store as weekday-based? For dated events, spec says date-based but UI is day tabs; we pick next occurrence within current week window.
-    // Simplify: create a dated event for next occurrence of evDay
-    const today = new Date();
-    const target = new Date(today);
-    const diff = (evDay - target.getDay() + 7) % 7;
-    target.setDate(today.getDate()+diff);
-    const iso = `${target.getFullYear()}-${String(target.getMonth()+1).padStart(2,"0")}-${String(target.getDate()).padStart(2,"0")}`;
-    try{ await api(`/planning/fixed-events/`, token, "POST", {student:sid, title:evTitle.trim(), date: iso, start_time: evStart, end_time: evEnd}); setEvTitle(""); notify("رویداد ثبت شد."); const raw= await api<FixedEvent[] | {results: FixedEvent[]}>(`/planning/fixed-events/?student=${sid}`, token).catch(async()=>{ const{allPages}=await import("@/lib/api"); return allPages<FixedEvent>(`/planning/fixed-events/?student=${sid}`, token);}); const r = Array.isArray(raw) ? raw : (raw as {results: FixedEvent[]}).results ?? []; setEvents(r); await onRefresh(); }catch(e){ setError(apiErrorMessage(e)); }
+    if(eventSaving.current) return;
+    eventSaving.current=true; setEventBusy(true);
+    const date = recurringEvent ? null : eventDate;
+    try {
+      await api(`/planning/fixed-events/${eventId ? eventId+'/' : ''}`, token, eventId ? 'PATCH' : 'POST', {
+        student:sid, title:evTitle.trim(), kind:eventKind, date, weekday:recurringEvent ? evDay : null,
+        valid_from:recurringEvent ? validFrom || null : null, valid_until:recurringEvent ? validUntil || null : null,
+        start_time:evStart || null, end_time:evEnd || null,
+      });
+      setEvTitle(''); setEventId(null); notify('رویداد ثبت شد.');
+      if (date) setEvDay(weekdayIndex(date));
+      const {allPages}=await import('@/lib/api');
+      setEvents(await allPages<FixedEvent>(`/planning/fixed-events/?student=${sid}`,token));
+      await onRefresh();
+    } catch(error) {setError(apiErrorMessage(error));}
+    finally {eventSaving.current=false;setEventBusy(false);}
   }
 
   async function submitRecurring(){
@@ -234,10 +252,10 @@ function applySequential(list:{period:number; subject_name:string; start_time:st
     for(const c of otherCommits){ const k=c.group_id||`s:${c.id}`; if(!m.has(k)) m.set(k,[]); m.get(k)!.push(c); }
     return [...m.values()];
   },[otherCommits]);
-  const dayEvents = (Array.isArray(events) ? events : []).filter(e=> new Date(e.date).getDay()===activeDay);
+  const dayEvents = (Array.isArray(events) ? events : []).filter(e=> (e.weekday ?? (e.date ? weekdayIndex(e.date) : -1))===evDay);
 
   return (
-    <section style={{background:"white", border:"1px solid #e7e1ec", borderRadius:12, padding:12, display:"grid", gap:12}} dir="rtl">
+    <section ref={panel} style={{background:"white", border:"1px solid #e7e1ec", borderRadius:12, padding:12, display:"grid", gap:12}} dir="rtl">
       <ApplyFixedButton token={token} studentId={sid} planId={planId} onApplied={refreshSources} />
       <div style={{display:"flex", gap:8, alignItems:"center"}}>
         <button onClick={()=>setSection("school")} style={{padding:"6px 12px", borderRadius:8, border: section==="school"?"1px solid #5B0FAD":"1px solid #e7e1ec", background: section==="school"?"#f6f1fb":"white", color: section==="school"?"#5B0FAD":"#16041E"}}>برنامه مدرسه</button>
@@ -314,7 +332,11 @@ function applySequential(list:{period:number; subject_name:string; start_time:st
         </>
       ) : (
         <div style={{display:"grid", gap:12}}>
-          {/* Day tabs for events */}
+          <div className="planning-type-picker">{(['EXAM','QUIZ','EVENT'] as const).map(kind=><button key={kind} aria-pressed={eventKind===kind} onClick={()=>setEventKind(kind)}>{kind==='EXAM'?'امتحان':kind==='QUIZ'?'کوییز':'رویداد'}</button>)}</div>
+          <label><input type="checkbox" checked={recurringEvent} onChange={e=>setRecurringEvent(e.target.checked)}/> تکرار هفتگی</label>
+          {!recurringEvent && <label>تاریخ شمسی<JalaliDateInput value={eventDate} required onChange={e=>setEventDate(e.target.value)}/></label>}
+          {recurringEvent && <div><label>از تاریخ<JalaliDateInput value={validFrom} onChange={e=>setValidFrom(e.target.value)}/></label><label>تا تاریخ<JalaliDateInput value={validUntil} onChange={e=>setValidUntil(e.target.value)}/></label></div>}
+          {/* Day tabs use persisted Monday=0 values. */}
           <div style={{display:"flex", gap:6, overflowX:"auto", paddingBottom:4}}>
             {DAY_TABS.map(wd=> <button key={wd} onClick={()=>setEvDay(wd)} style={{padding:"6px 10px", borderRadius:8, border: evDay===wd?"1px solid #5B0FAD":"1px solid #e7e1ec", background: evDay===wd?"#5B0FAD":"white", color: evDay===wd?"white":"#16041E", fontSize:12}}>{WEEKDAY_LABEL[wd]}</button>)}
           </div>
@@ -322,9 +344,9 @@ function applySequential(list:{period:number; subject_name:string; start_time:st
             <label style={{display:"grid", gap:4, fontSize:11}}>عنوان<input value={evTitle} onChange={e=>setEvTitle(e.target.value)} placeholder="جلسه" style={{minWidth:120}} /></label>
             <label style={{display:"grid", gap:4, fontSize:11}}>شروع<input type="time" value={evStart} onChange={e=>setEvStart(e.target.value)} /></label>
             <label style={{display:"grid", gap:4, fontSize:11}}>پایان<input type="time" value={evEnd} onChange={e=>setEvEnd(e.target.value)} /></label>
-            <button onClick={submitEvent} style={{background:"#5B0FAD", color:"white", borderRadius:8, padding:"6px 12px", fontSize:12}}>ثبت برای {WEEKDAY_LABEL[evDay]}</button>
+            <button disabled={eventBusy} onClick={submitEvent} style={{background:"#5B0FAD", color:"white", borderRadius:8, padding:"6px 12px", fontSize:12}}>{eventId ? 'ذخیره تغییرات' : recurringEvent ? `ثبت برای ${WEEKDAY_LABEL[evDay]}` : 'ثبت در تاریخ انتخاب‌شده'}</button>
           </div>
-          {dayEvents.length>0 && <div style={{display:"grid", gap:6}}>{dayEvents.map(ev=> <div key={ev.id} style={{display:"flex", justifyContent:"space-between", gap:6, border:"1px solid #e7e1ec", borderRadius:6, padding:"6px 8px", fontSize:12}}><span>{ev.title} · {ev.start_time.slice(0,5)}-{ev.end_time.slice(0,5)}</span><IconButton icon="trash" label="حذف رویداد" variant="danger" onClick={async()=>{ if(confirm("حذف شود؟")){ await api(`/planning/fixed-events/${ev.id}/`, token, "DELETE"); setEvents(events.filter(x=>x.id!==ev.id)); await onRefresh();}}} /></div>)}</div>}
+          {dayEvents.length>0 && <div style={{display:"grid", gap:6}}>{dayEvents.map(ev=> <div key={ev.id} style={{display:"flex", justifyContent:"space-between", gap:6, border:"1px solid #e7e1ec", borderRadius:6, padding:"6px 8px", fontSize:12}}><span>{ev.kind === "QUIZ" ? "کوییز" : ev.kind === "EXAM" ? "امتحان" : "رویداد"} · {ev.weekday != null ? "هفتگی" : ev.date ? persianDate(ev.date) : ""} · {ev.title} · {ev.start_time?.slice(0,5) || ""}-{ev.end_time?.slice(0,5) || ""}</span><button onClick={()=>{setEventId(ev.id);setEvTitle(ev.title);setEventKind(ev.kind);setRecurringEvent(ev.weekday!=null);setEvDay(ev.weekday ?? (ev.date ? weekdayIndex(ev.date) : 5));setEventDate(ev.date || tehranTodayISO());setValidFrom(ev.valid_from || '');setValidUntil(ev.valid_until || '');setEvStart(ev.start_time?.slice(0,5) || '');setEvEnd(ev.end_time?.slice(0,5) || '');}}>ویرایش</button><IconButton icon="trash" label="حذف رویداد" variant="danger" onClick={async()=>{ if(confirm("حذف شود؟")){ await api(`/planning/fixed-events/${ev.id}/`, token, "DELETE"); setEvents(events.filter(x=>x.id!==ev.id)); await onRefresh();}}} /></div>)}</div>}
 
           <div style={{display:"grid", gap:6, background:"#faf9fc", border:"1px solid #e7e1ec", borderRadius:8, padding:8}}>
             <strong style={{fontSize:12}}>فعالیت تکرارشونده (مثل باشگاه)</strong>

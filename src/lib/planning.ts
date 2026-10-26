@@ -72,7 +72,9 @@ export type PlanItemExecution = {
   completed_at: string | null;
   completion_method: "QUICK" | "TIMER";
 };
+export type SchoolEventOccurrence = { id: number; date: string; kind: "EXAM" | "QUIZ"; title: string; recurring: boolean; start_time: string | null; end_time: string | null };
 export type Plan = {
+  school_events?: SchoolEventOccurrence[];
   id: number;
   student: number;
   counselor: number;
@@ -95,10 +97,10 @@ export const commitmentLabel: Record<Commitment["kind"], string> = {
 };
 
 export const weekdayLabels: Record<number, string> = {
-  0: "دوشنبه", 1: "سه‌شنبه", 2: "چهارشنبه", 3: "پنج‌شنبه", 4: "جمعه", 5: "شنبه", 6: "یکشنبه",
+  0: "دوشنبه", 1: "سه‌شنبه", 2: "چهارشنبه", 3: "پنجشنبه", 4: "جمعه", 5: "شنبه", 6: "یکشنبه",
 };
 export const weekdayShort: Record<number, string> = {
-  5: "شنبه", 6: "یکشنبه", 0: "دوشنبه", 1: "سه‌شنبه", 2: "چهارشنبه", 3: "پنج‌شنبه", 4: "جمعه",
+  5: "شنبه", 6: "یکشنبه", 0: "دوشنبه", 1: "سه‌شنبه", 2: "چهارشنبه", 3: "پنجشنبه", 4: "جمعه",
 };
 export const WEEKDAY_ORDER = [5, 6, 0, 1, 2, 3, 4] as const; // Sat..Fri Persian week
 
@@ -106,110 +108,59 @@ export const WEEKDAY_ORDER = [5, 6, 0, 1, 2, 3, 4] as const; // Sat..Fri Persian
 // ----- Central date/time utilities (Gregorian canonical, Jalali presentation, Tehran TZ) -----
 const TEHRAN_TZ = "Asia/Tehran";
 
-export function tehranTodayISO(): string {
-  // Use Intl to get Tehran date correctly (avoid UTC off-by-one at 23:30 Tehran)
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: TEHRAN_TZ }).format(new Date());
-  return parts; // YYYY-MM-DD
+export function tehranTodayISO(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {timeZone: TEHRAN_TZ, year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(now);
+  const part = (type: string) => parts.find(p=>p.type===type)!.value;
+  return `${part('year')}-${part('month')}-${part('day')}`;
 }
-
-export function tehranTomorrowISO(): string {
-  const today = tehranTodayISO();
-  const d = new Date(`${today}T12:00:00`);
-  d.setDate(d.getDate() + 1);
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+export function tehranTomorrowISO() { return addDaysISO(tehranTodayISO(),1); }
+export function civilDate(iso: string) {
+  const date = new Date(`${iso}T12:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0,10)!==iso) throw new Error('تاریخ معتبر نیست.');
+  return date;
 }
-
-import { gregorianToJalali, JALALI_MONTHS } from "@/lib/jalali";
-
-function toFaDigits(s: string): string { return s.replace(/[0-9]/g, d => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]); }
-
-export function formatJalali(iso: string, withWeekday = true): string {
-  // Pure Jalali via jalali.ts — no Intl calendar, deterministic شمسی
-  try {
-    const [gy, gm, gd] = iso.split("-").map(Number);
-    if (!gy || !gm || !gd) return toFaDigits(iso);
-    const { jy, jm, jd } = gregorianToJalali(gy, gm, gd);
-    const wd = new Date(`${iso}T12:00:00`).getDay();
-    const wdMap: Record<number,string> = {0:"دوشنبه",1:"سه‌شنبه",2:"چهارشنبه",3:"پنج‌شنبه",4:"جمعه",5:"شنبه",6:"یکشنبه"};
-    const core = `${toFaDigits(String(jd))} ${JALALI_MONTHS[jm-1]} ${toFaDigits(String(jy))}`;
-    return withWeekday ? `${wdMap[wd]}، ${core}` : core;
-  } catch { return toFaDigits(iso); }
+/** Persisted/API convention: Python weekday, Monday=0, Saturday=5. */
+export function weekdayIndex(iso: string) { return (civilDate(iso).getUTCDay()+6)%7; }
+export function weekdayFa(iso: string) { return weekdayLabels[weekdayIndex(iso)]; }
+export function formatJalali(iso: string, withWeekday = true) {
+  if (!iso) return '';
+  return new Intl.DateTimeFormat('fa-IR-u-ca-persian', {timeZone:'UTC',year:'numeric',month:'long',day:'numeric', ...(withWeekday?{weekday:'long' as const}:{})}).format(civilDate(iso));
 }
-
-export function formatJalaliShort(iso: string): string {
-  // e.g. سه‌شنبه ۸ مهر — with weekday but short
-  try {
-    const [gy, gm, gd] = iso.split("-").map(Number);
-    const { jy, jm, jd } = gregorianToJalali(gy, gm, gd);
-    const wd = new Date(`${iso}T12:00:00`).getDay();
-    const wdMap: Record<number,string> = {0:"دوشنبه",1:"سه‌شنبه",2:"چهارشنبه",3:"پنج‌شنبه",4:"جمعه",5:"شنبه",6:"یکشنبه"};
-    return `${wdMap[wd]} ${toFaDigits(String(jd))} ${JALALI_MONTHS[jm-1]}`;
-  } catch { return toFaDigits(iso); }
+export function formatJalaliShort(iso: string) {
+  if (!iso) return '';
+  return new Intl.DateTimeFormat('fa-IR-u-ca-persian',{timeZone:'UTC',weekday:'long',month:'long',day:'numeric'}).format(civilDate(iso));
 }
-
-export function weekdayFa(iso: string): string {
-  const wd = new Date(`${iso}T12:00:00`).getDay();
-  const wdMap: Record<number,string> = {0:"دوشنبه",1:"سه‌شنبه",2:"چهارشنبه",3:"پنج‌شنبه",4:"جمعه",5:"شنبه",6:"یکشنبه"};
-  return wdMap[wd];
+export const persianDate = formatJalaliShort;
+/** Timestamp date in Tehran; civil dates are already calendar days. */
+export function formatTehranDate(value: string) {
+  if (!value) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return formatJalali(value, false);
+  return new Intl.DateTimeFormat('fa-IR-u-ca-persian', {timeZone:TEHRAN_TZ,dateStyle:'medium'}).format(new Date(value));
 }
-
-export function persianDate(iso: string) { return formatJalaliShort(iso); }
-
-export function formatJalaliDateTime(isoDateTime: string): string {
-  // "2026-09-30T14:30:00Z" -> "۱۰ مهر ۱۴۰۴، ۱۴:۳۰" — شمسی محض
-  try {
-    const d = new Date(isoDateTime);
-    if (isNaN(d.getTime())) return toFaDigits(isoDateTime);
-    // extract Tehran date parts via jalali conversion from UTC date
-    const y = d.getUTCFullYear(); const m = d.getUTCMonth()+1; const day = d.getUTCDate();
-    // Use d in Tehran TZ for correct jalali day: shift by getTimezone not needed; use UTC date as stored
-    // For ISO Z we already have UTC; for non-Z local we use local parts
-    const gy = d.getFullYear(); const gm = d.getMonth()+1; const gd = d.getDate();
-    const hasTZ = isoDateTime.includes("Z") || isoDateTime.includes("+");
-    const j = hasTZ ? gregorianToJalali(y,m,day) : gregorianToJalali(gy,gm,gd);
-    const datePart = `${toFaDigits(String(j.jd))} ${JALALI_MONTHS[j.jm-1]} ${toFaDigits(String(j.jy))}`;
-    // time in Tehran
-    const tp = new Intl.DateTimeFormat("fa-IR",{hour:"2-digit",minute:"2-digit",hour12:false,timeZone:"Asia/Tehran"}).format(d);
-    if (tp === "۰۰:۰۰" && !isoDateTime.includes("T") && !isoDateTime.includes(":")) return datePart;
-    return `${datePart}، ${tp}`;
-  } catch { return toFaDigits(isoDateTime); }
+export function formatJalaliDateTime(value: string) {
+  if (!value) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return formatJalali(value,false);
+  const instant = new Date(value);
+  const date = new Intl.DateTimeFormat('fa-IR-u-ca-persian',{timeZone:TEHRAN_TZ,dateStyle:'medium'}).format(instant);
+  const time = new Intl.DateTimeFormat('fa-IR',{timeZone:TEHRAN_TZ,hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(instant);
+  return `${date}، ${time}`;
 }
-
-export function formatJalaliDate(iso: string): string { return formatJalali(iso, true); }
-
+export const formatJalaliDate = formatJalali;
+export function addDaysISO(iso: string, delta: number) {
+  const d=civilDate(iso); d.setUTCDate(d.getUTCDate()+delta); return d.toISOString().slice(0,10);
+}
 export function weekDates(start: string, end: string) {
-  const dates: string[] = [];
-  const date = new Date(`${start}T12:00:00`);
-  const last = new Date(`${end}T12:00:00`);
-  while (date <= last && dates.length < 31) {
-    dates.push(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`);
-    date.setDate(date.getDate() + 1);
-  }
-  return dates;
+  const result: string[]=[];
+  for(let date=start;date<=end && result.length<31;date=addDaysISO(date,1)) result.push(date);
+  return result;
 }
-
-export function sevenDayRange(startISO: string): string[] {
-  const out: string[] = [];
-  const d = new Date(`${startISO}T12:00:00`);
-  for (let i=0;i<7;i++) {
-    out.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);
-    d.setDate(d.getDate()+1);
-  }
-  return out;
-}
-
-export function addDaysISO(iso: string, delta: number): string {
-  const d = new Date(`${iso}T12:00:00`);
-  d.setDate(d.getDate()+delta);
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-}
-
-export function currentWeekStart() { return tehranTodayISO(); }
+export function sevenDayRange(start: string) { return Array.from({length:7},(_,i)=>addDaysISO(start,i)); }
+export function currentWeekStart() { const today=tehranTodayISO(); return addDaysISO(today,-((weekdayIndex(today)+2)%7)); }
 
 export function planTitleSuggestion(startISO: string, endISO: string): string {
   // "برنامه ۸ تا ۱۴ مهر"
-  const a = new Intl.DateTimeFormat("fa-IR-u-ca-persian", { day: "numeric", month: "long" }).format(new Date(`${startISO}T12:00:00`));
-  const b = new Intl.DateTimeFormat("fa-IR-u-ca-persian", { day: "numeric", month: "long" }).format(new Date(`${endISO}T12:00:00`));
+  const a = new Intl.DateTimeFormat("fa-IR-u-ca-persian", { day: "numeric", month: "long", timeZone:"UTC" }).format(civilDate(startISO));
+  const b = new Intl.DateTimeFormat("fa-IR-u-ca-persian", { day: "numeric", month: "long", timeZone:"UTC" }).format(civilDate(endISO));
   return `برنامه ${a} تا ${b}`;
 }
 

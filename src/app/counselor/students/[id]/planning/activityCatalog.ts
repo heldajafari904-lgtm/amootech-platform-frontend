@@ -10,7 +10,7 @@ export function catalogOptions(response: unknown, kind: 'grade' | 'course'): Opt
   const status = field(response, 'status');
   if (!Array.isArray(rows) || (status != null && status !== 100)) throw new Error('پاسخ فهرست آموزشی معتبر نیست. دوباره تلاش کنید.');
   const result = options(rows, kind);
-  if (result.length !== rows.length || result.some(row => !row.name.trim()) || new Set(result.map(row => row.id)).size !== result.length) throw new Error('شناسه یا عنوان فهرست آموزشی معتبر نیست. دوباره تلاش کنید.');
+  if (result.length !== rows.length || result.some(row => !row.name.trim()) || new Set(result.map(row => kind === 'course' ? `${field(row.raw,'gradeid')}:${row.id}` : row.id)).size !== result.length) throw new Error('شناسه یا عنوان فهرست آموزشی معتبر نیست. دوباره تلاش کنید.');
   return result;
 }
 
@@ -28,7 +28,7 @@ export function activityGrades(canonical: CanonicalGrade[], student: Context, pr
     if (candidates.length > 1) throw new Error('نگاشت پایه‌های فهرست مبهم است. دوباره تلاش کنید.');
     return candidates.map(row => ({ ...row, name: grade.name, fieldVerified: low !== 10 || row.name !== grade.name, restrictField: low === 10 }));
   });
-  if (provider.length && !result.length) throw new Error('پایه‌های کاتالوگ با دوره و رشته دانش‌آموز تطبیق ندارند. دوباره تلاش کنید.');
+  if (!result.length) throw new Error('پایه‌های کاتالوگ با دوره و رشته دانش‌آموز تطبیق ندارند؛ مدیر باید پروفایل و همگام‌سازی فهرست را بررسی کند.');
   return result;
 }
 

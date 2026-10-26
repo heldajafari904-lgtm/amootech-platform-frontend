@@ -6,7 +6,7 @@ import { useSyncExternalStore, useState, useEffect, useCallback } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { accessToken, api, onSessionExpired, errorMessage } from "@/lib/api";
 import TelegramControl from "./TelegramControl";
-import { formatJalali, formatJalaliDateTime } from "@/lib/planning";
+import { formatTehranDate, formatJalaliDateTime } from "@/lib/planning";
 
 const subscribe = (callback: () => void) => onSessionExpired("ADMIN", callback);
 const snapshot = () => accessToken("ADMIN") || "";
@@ -71,7 +71,7 @@ export default function AdminStudentDetail() {
     <div className="admin-card" style={{display:"flex", flexWrap:"wrap", justifyContent:"space-between", gap:"1rem"}}>
       <div>
         <h1 style={{fontSize:"1.3rem", fontWeight:800}}>{student.user.first_name} {student.user.last_name} <small style={{color:"#64748b"}}>@{student.user.username}</small></h1>
-        <p style={{color:"#64748b", fontSize:".85rem"}}>عضویت: {student.user.date_joined ? formatJalali(student.user.date_joined.slice(0,10), false) : "—"} · {student.user.is_active ? <span className="admin-badge ok">فعال</span> : <span className="admin-badge bad">غیرفعال</span>} · آخرین ورود: {student.user.last_login ? formatJalaliDateTime(student.user.last_login) : "—"}</p>
+        <p style={{color:"#64748b", fontSize:".85rem"}}>عضویت: {student.user.date_joined ? formatTehranDate(student.user.date_joined) : "—"} · {student.user.is_active ? <span className="admin-badge ok">فعال</span> : <span className="admin-badge bad">غیرفعال</span>} · آخرین ورود: {student.user.last_login ? formatJalaliDateTime(student.user.last_login) : "—"}</p>
         <p style={{fontSize:".85rem"}}>{student.grade_name || "—"} / {student.field_name || "—"} {student.school_name ? `· ${student.school_name}` : ""}</p>
         <p style={{fontSize:".85rem"}}>مشاور: {student.counselor_user ? `${student.counselor_user.first_name || student.counselor_user.username} ${student.counselor_user.last_name||""}` : <span className="admin-badge warn">بدون مشاور</span>} · تلگرام: <span className={`admin-badge ${student.telegram_status?.group_connected?"ok":"bad"}`}>{student.telegram_status?.group_connected?"متصل":"قطع"}</span></p>
       </div>

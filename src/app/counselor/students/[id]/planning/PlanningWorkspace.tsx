@@ -1,4 +1,5 @@
 "use client";
+import JalaliDateInput from "@/components/JalaliDateInput";
 
 import Link from "next/link";
 import { StudentPlanningHeader, TopChart } from "./PlanningOverview";
@@ -15,6 +16,8 @@ import { api, allPages } from "@/lib/api";
 import { IconButton } from "@/components/counselor/PanelUI";
 import {
   addDaysISO,
+  currentWeekStart,
+  weekdayFa,
   Commitment,
   SchoolSlot,
   formatJalaliShort,
@@ -55,7 +58,7 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
   const [deleteTarget, setDeleteTarget] = useState<PlanItem | null>(null);
   const [moveTime, setMoveTime] = useState("");
   const [moveUnscheduled, setMoveUnscheduled] = useState(false);
-  const [weekStart, setWeekStart] = useState(tehranTodayISO);
+  const [weekStart, setWeekStart] = useState(currentWeekStart);
   const [title, setTitle] = useState("");
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [quickAddDay, setQuickAddDay] = useState<string | null>(null);
@@ -71,6 +74,7 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
   const [saveFailed, setSaveFailed] = useState(false);
   const [hasSaved, setHasSaved] = useState(false);
   const [examDates, setExamDates] = useState<string[]>([]);
+  const [newExamDates, setNewExamDates] = useState<string[]>([]);
   // draft cache: optimistic plan before Update
   const [hasDraft, setHasDraft] = useState(false);
 
@@ -159,7 +163,7 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
     };
     window.addEventListener("plan:fixed-resynced" as unknown as string, handler as EventListener);
     return ()=> window.removeEventListener("plan:fixed-resynced" as unknown as string, handler as EventListener);
-  }, [planId, refresh]);
+  }, [planId, refresh, setPlan]);
 
   useEffect(() => {
     if (!planId) return;
@@ -188,12 +192,10 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
     creatingPlan.current = true; setPendingWrites(count => count + 1);
     setBusy(true); setError("");
     try {
-      const end = new Date(`${weekStart}T12:00:00`);
-      end.setDate(end.getDate() + 6);
-      const endDate = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2,"0")}-${String(end.getDate()).padStart(2,"0")}`;
+      const endDate = addDaysISO(weekStart,6);
       const effectiveTitle = title.trim() || planTitleSuggestion(weekStart, endDate);
-      const created = await client.createPlan({ student: student.id, start_date: weekStart, end_date: endDate, title: effectiveTitle, apply_fixed: applyFixedChoice==="apply", exam_dates: examDates });
-      setHasSaved(true); setSaveFailed(false); setPlans((c) => [created, ...c]); setPlanId(created.id); setPlan(created); setTitle(""); setExamDates([]); setNewPlanStep(1); setShowNewPlan(false); notify(setNotice, applyFixedChoice==="apply" ? "برنامه با باکس‌های ثابت ساخته شد." : "برنامه خالی ساخته شد.");
+      const created = await client.createPlan({ student: student.id, start_date: weekStart, end_date: endDate, title: effectiveTitle, apply_fixed: applyFixedChoice==="apply", exam_dates: newExamDates });
+      setHasSaved(true); setSaveFailed(false); setPlans((c) => [created, ...c]); setPlanId(created.id); setPlan(created); setTitle(""); setExamDates(created.exam_dates || []); setNewExamDates([]); setNewPlanStep(1); setShowNewPlan(false); notify(setNotice, applyFixedChoice==="apply" ? "برنامه با باکس‌های ثابت ساخته شد." : "برنامه خالی ساخته شد.");
     } catch (r) { setSaveFailed(true); setError(apiErrorMessage(r)); } finally { creatingPlan.current = false; setBusy(false); setPendingWrites(count => count - 1); }
   }
 
@@ -445,7 +447,7 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
               <div style={{display:"grid", gap:12}}>
                 <div className="ws-date-picker">
                   <label>شروع برنامه
-                    <input type="date" required value={weekStart} onChange={(e)=> setWeekStart(e.target.value)} />
+                    <JalaliDateInput required value={weekStart} onChange={(e)=> setWeekStart(e.target.value)} />
                     <small>{formatJalaliShort(weekStart)} — تا {formatJalaliShort(addDaysISO(weekStart,6))}</small>
                   </label>
                   <div className="ws-date-quick">
@@ -461,7 +463,7 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
                 </div>
                 <div style={{display:"flex", gap:8, justifyContent:"end"}}>
                   <button type="button" className="ws-subtle" onClick={()=> { setShowNewPlan(false); setNewPlanStep(1); }}>انصراف</button>
-                  <button type="button" className="ws-primary" onClick={()=> setNewPlanStep(2)}>ادامه — انتخاب روزهای آزمون</button>
+                  <button type="button" className="ws-primary" onClick={event=>{ const input=event.currentTarget.closest('[role="dialog"]')?.querySelector<HTMLInputElement>('input'); if(input?.reportValidity()) setNewPlanStep(2); }}>ادامه — انتخاب روزهای آزمون</button>
                 </div>
               </div>
             ) : (
@@ -470,14 +472,14 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
                   <strong style={{fontSize:13}}>دانش‌آموز چه روزهایی آزمون/کوییز دارد؟</strong>
                   <p style={{fontSize:11, color:"#706578", margin:"4px 0 8px"}}>روزها را انتخاب کن — روی خودِ روز در برنامه «امتحان داره» و علامت باکس آمادگی نمایش داده می‌شود.</p>
                   <div className="ws-exam-grid" style={{display:"grid", gridTemplateColumns:"repeat(4, minmax(0,1fr))", gap:8}}>
-                    {Array.from({length:7},(_,i)=>{ const d=new Date(`${weekStart}T12:00:00`); d.setDate(d.getDate()+i); const iso=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; const label=new Intl.DateTimeFormat("fa-IR",{weekday:"long"}).format(d); const active=examDates.includes(iso); return <button key={iso} type="button" onClick={()=> setExamDates(v=> active? v.filter(x=>x!==iso): [...v, iso])} className={active?"is-active":""} style={{display:"grid", gap:4, padding:"10px 8px", borderRadius:10, border: active?"1px solid #5B0FAD":"1px solid #e7e1ec", background: active?"#f6f1fb":"white", color: active?"#5B0FAD":"#16041E"}}><span style={{fontSize:11, fontWeight:700}}>{label}</span><span style={{fontSize:11}}>{new Intl.DateTimeFormat("fa-IR-u-ca-persian",{day:"numeric", month:"short"}).format(d)}</span></button>; })}
+                    {sevenDayRange(weekStart).map(iso=>{ const label=weekdayFa(iso); const active=newExamDates.includes(iso); return <button key={iso} type="button" onClick={()=> setNewExamDates(v=> active? v.filter(x=>x!==iso): [...v, iso])} className={active?"is-active":""} style={{display:"grid", gap:4, padding:"10px 8px", borderRadius:10, border: active?"1px solid #5B0FAD":"1px solid #e7e1ec", background: active?"#f6f1fb":"white", color: active?"#5B0FAD":"#16041E"}}><span style={{fontSize:11, fontWeight:700}}>{label}</span><span style={{fontSize:11}}>{formatJalaliShort(iso)}</span></button>; })}
                   </div>
-                  {examDates.length>0 && <p style={{fontSize:11, color:"#5B0FAD", background:"#f6f1fb", border:"1px solid #e7e1ec", borderRadius:8, padding:"6px 8px", marginTop:8}}>{examDates.length} روز انتخاب شد — بعد از ساخت، هر روز گوشه کادر و بالای روز «امتحان داره» دارد و تا باکس آمادگی نگذاری، برچسب هشدار می‌ماند.</p>}
+                  {newExamDates.length>0 && <p style={{fontSize:11, color:"#5B0FAD", background:"#f6f1fb", border:"1px solid #e7e1ec", borderRadius:8, padding:"6px 8px", marginTop:8}}>{newExamDates.length} روز انتخاب شد — بعد از ساخت، هر روز گوشه کادر و بالای روز «امتحان داره» دارد و تا باکس آمادگی نگذاری، برچسب هشدار می‌ماند.</p>}
                 </div>
                 <div style={{display:"flex", gap:8, justifyContent:"space-between"}}>
                   <button type="button" className="ws-subtle" onClick={()=> setNewPlanStep(1)}>بازگشت</button>
                   <div style={{display:"flex", gap:8}}>
-                    <button type="button" className="ws-subtle" onClick={()=> { setExamDates([]); }}>رد شدن</button>
+                    <button type="button" className="ws-subtle" onClick={()=> { setNewExamDates([]); }}>رد شدن</button>
                     <button type="submit" disabled={busy} className="ws-primary">{busy ? "در حال ساخت…" : "ساخت برنامه ۷ روزه"}</button>
                   </div>
                 </div>
@@ -499,7 +501,7 @@ export default function PlanningWorkspace({ studentId }: { studentId: string }) 
             <button aria-pressed={!selectedDay} className={!selectedDay ? "is-active" : ""} onClick={() => setSelectedDay(null)}>همه روزها</button>
           </nav>
 
-          <TimelineBoard dates={days.filter(date => !selectedDay || date === selectedDay)} days={plan.days || []} commitments={activeCommitments} schoolSlots={schoolSlots} pending={new Set([...actionKeys].filter(key => key.startsWith("item:")).map(key => Number(key.split(":")[1])))} copyDate={copySource?.date || null} copyBusy={copyBusy} onCopy={startCopy} onCopyTarget={(date,day) => { void handleCopyTargetClick(date,day); }} onAdd={date => { void addToDay(date); }} onDrop={transfer} onEdit={setEditingItem} onDelete={setDeleteTarget} onDuplicate={item => { void handleDuplicate(item); }} onMoveMenu={(item,date) => { setMoveItem(item); setMoveTarget(date); setMoveTime(item.start_time?.slice(0,5) || "06:00"); setMoveUnscheduled(!item.start_time); }}/>
+          <TimelineBoard schoolEvents={plan.school_events} examDates={plan.exam_dates || []} dates={days.filter(date => !selectedDay || date === selectedDay)} days={plan.days || []} commitments={activeCommitments} schoolSlots={schoolSlots} pending={new Set([...actionKeys].filter(key => key.startsWith("item:")).map(key => Number(key.split(":")[1])))} copyDate={copySource?.date || null} copyBusy={copyBusy} onCopy={startCopy} onCopyTarget={(date,day) => { void handleCopyTargetClick(date,day); }} onAdd={date => { void addToDay(date); }} onDrop={transfer} onEdit={setEditingItem} onDelete={setDeleteTarget} onDuplicate={item => { void handleDuplicate(item); }} onMoveMenu={(item,date) => { setMoveItem(item); setMoveTarget(date); setMoveTime(item.start_time?.slice(0,5) || "06:00"); setMoveUnscheduled(!item.start_time); }}/>
 
         </>
       )}

@@ -1,4 +1,5 @@
 "use client";
+import JalaliDateInput from "@/components/JalaliDateInput";
 
 import { useEffect, useRef, useState } from "react";
 import { api, errorMessage } from "@/lib/api";
@@ -50,7 +51,7 @@ export default function SchedulePanel({ exam, token, onExam, onBusyChange }: {
   const disabled = busy || !loaded || !!current.schedule_locked;
   return <section className="exam-schedule" aria-labelledby="exam-schedule-title" aria-busy={busy || (!loaded && !error)}>
     <h3 id="exam-schedule-title">زمان‌بندی و برگزاری</h3>
-    <p className="exam-muted">همه ساعت‌ها به وقت تهران است. تاریخ ورودی میلادی و خلاصه تاریخ شمسی است.</p>
+    <p className="exam-muted">همه ساعت‌ها به وقت تهران است. تاریخ‌ها شمسی هستند.</p>
     <p><strong>{current.availability?.label ?? "در حال بررسی وضعیت…"}</strong> · مدت ثبت‌شده: {current.duration_minutes?.toLocaleString("fa-IR") ?? "—"} دقیقه</p>
     <p className="exam-muted">مدت آزمون هنگام ساخت تعیین شده و در این بخش قابل تغییر نیست.</p>
     <dl className="exam-details-fields">{fields.map(({ key, label }) => <div key={key}><dt>{label}</dt><dd>{key === "result_release_at" && !current[key] ? "بدون تأخیر در آموزتک" : examDateTime(current[key])}</dd></div>)}</dl>
@@ -60,7 +61,7 @@ export default function SchedulePanel({ exam, token, onExam, onBusyChange }: {
     {current.schedule_locked && <p role="status" className="exam-muted">مشارکت در آزمون آغاز شده است؛ زمان‌بندی قابل تغییر نیست.</p>}
     <form onSubmit={save}>
       <fieldset disabled={disabled} className="exam-schedule-fields"><legend>تنظیم زمان‌بندی</legend>
-        {fields.map(({ key, label }) => <div key={key} className="exam-schedule-pair"><label>تاریخ {label} (میلادی)<input type="date" value={draft[key].date} onChange={event => change(key, "date", event.target.value)}/></label><label>ساعت {label}<input type="time" step="1" value={draft[key].time} onChange={event => change(key, "time", event.target.value)}/></label></div>)}
+        {fields.map(({ key, label }) => <div key={key} className="exam-schedule-pair"><label>تاریخ {label} (شمسی)<JalaliDateInput value={draft[key].date} onChange={event => change(key, "date", event.target.value)}/></label><label>ساعت {label}<input type="time" step="1" value={draft[key].time} onChange={event => change(key, "time", event.target.value)}/></label></div>)}
         <p className="exam-muted">هر دو ورودی خالی یعنی بدون محدودیت زمانی در آن بخش. مهلت، آخرین زمان ورود است؛ انتشار نتیجه باید پس از آن به‌اندازه مدت آزمون فاصله داشته باشد.</p>
         <div className="exam-actions"><button className="exam-primary" type="submit">{busy ? "در حال ذخیره…" : "ذخیره زمان‌بندی"}</button><button className="exam-secondary" type="button" onClick={() => { setDraft(scheduleDraft(current)); setError(""); setNotice(""); }}>انصراف</button><button className="exam-secondary" type="button" onClick={() => setDraft(scheduleDraft({}))}>پاک‌کردن زمان‌بندی</button></div>
       </fieldset>

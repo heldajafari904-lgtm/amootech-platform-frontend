@@ -3,7 +3,7 @@ import StudentAccountForm from "@/components/accounts/StudentAccountForm";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { api, Page, errorMessage } from "@/lib/api";
-import { formatJalali } from "@/lib/planning";
+import { formatTehranDate } from "@/lib/planning";
 
 type Row = {
   id:number;
@@ -95,7 +95,7 @@ export default function StudentsClient(){
               <td><span className={`admin-badge ${r.user.is_active?"ok":"bad"}`}>{r.user.is_active?"فعال":"غیرفعال"}</span></td>
               <td>{r.grade_name || "—"} / {r.field_name || "—"}</td>
               <td>{r.counselor_user ? `${r.counselor_user.first_name || r.counselor_user.username} ${r.counselor_user.last_name||""}` : <span className="admin-badge warn">بدون مشاور</span>}</td>
-              <td>{r.user.date_joined ? formatJalali(r.user.date_joined.slice(0,10), false) : "—"}</td>
+              <td>{r.user.date_joined ? formatTehranDate(r.user.date_joined) : "—"}</td>
               <td>
                 <span className={`admin-badge ${r.telegram_status?.group_connected?"ok":"bad"}`}>{r.telegram_status?.group_connected?"متصل":"قطع"}</span>
                 {r.telegram_status?.suspended && <span className="admin-badge bad" style={{marginInlineStart:".25rem"}}>تعلیق</span>}

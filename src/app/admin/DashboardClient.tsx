@@ -1,9 +1,9 @@
 "use client";
 import Link from "next/link";
+import {formatJalaliShort} from "@/lib/planning";
 import TelegramBroadcast from "@/components/TelegramBroadcast";
 import { useEffect, useState } from "react";
 import { api, errorMessage } from "@/lib/api";
-import { gregorianToJalali, JALALI_MONTHS } from "@/lib/jalali";
 
 type Summary = {
   students: { total:number; active:number; inactive:number; unassigned:number; new_7d:number; new_30d:number; without_current_plan:number };
@@ -16,16 +16,12 @@ type Summary = {
   alerts: { type:string; severity:string; message:string; count:number }[];
 };
 
-function jalaliLabel(iso:string){
-  const [y,m,d]=iso.split("-").map(Number);
-  const j=gregorianToJalali(y,m,d);
-  return `${j.jd} ${JALALI_MONTHS[j.jm-1]}`;
-}
+const jalaliLabel = formatJalaliShort;
 function Trend({ data, colorClass }: { data:{date:string;count:number}[]; colorClass:string }){
   const max=Math.max(1, ...data.map(d=>d.count));
   return <div>
     <div className="admin-trend">
-      {data.map((d, i)=><span key={i} className={`admin-trend-bar ${colorClass}`} style={{height: `${Math.max(4, d.count*100/max)}%`}} title={`${d.date}: ${d.count}`} />)}
+      {data.map((d, i)=><span key={i} className={`admin-trend-bar ${colorClass}`} style={{height: `${Math.max(4, d.count*100/max)}%`}} title={`${formatJalaliShort(d.date)}: ${d.count}`} />)}
     </div>
     <div className="admin-trend-label"><span>{jalaliLabel(data[0].date)}</span><span>{jalaliLabel(data[data.length-1].date)}</span></div>
   </div>;

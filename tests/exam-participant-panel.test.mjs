@@ -16,13 +16,13 @@ function render(state = {}, students = [], props = {}) {
   }
   const source = readFileSync(new URL('../src/app/counselor/exams/ParticipantPanel.tsx', import.meta.url), 'utf8');
   const js = ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
-  const module = { exports: {} };
+  const loaded = { exports: {} };
   const localRequire = name => name === './participants' ? { ...participants, ParticipantSession: Session }
     : name === '@/lib/api' ? { api: () => { throw new Error('No network in rendering tests'); } }
     : name === '@/components/exams/ExamUI' ? { ExamStatusBadge: () => createElement('span', null, 'آماده انتشار') }
     : require(name);
-  new Function('require', 'module', 'exports', js)(localRequire, module, module.exports);
-  return renderToStaticMarkup(createElement(module.exports.default, {
+  new Function('require', 'module', 'exports', js)(localRequire, loaded, loaded.exports);
+  return renderToStaticMarkup(createElement(loaded.exports.default, {
     exam: { id: 7, title: 'آزمون فیزیک', status: 'READY' }, token: 'test-token', students,
     studentsLoading: false, studentError: '', onExam() {}, onCount() {}, onBusyChange() {}, ...props,
   }));

@@ -51,8 +51,8 @@ export default function TaxonomySelector({ token, student, tree, content, onChan
   useEffect(() => { if (navigated) heading.current?.focus(); }, [depth, navigated, source]);
   const selected = content.taxonomy;
   const canonical = useCatalog(token, '/academics/grades/');
-  const gradeData = useCatalog(token, source === 'quiz24' ? '/exams/provider/grades/' : null);
-  const courseData = useCatalog(token, source === 'quiz24' && depth > 0 ? '/exams/provider/courses/' : null);
+  const gradeData = useCatalog(token, source === 'quiz24' ? `/exams/provider/grades/?student=${student.id}` : null);
+  const courseData = useCatalog(token, source === 'quiz24' && depth > 0 ? `/exams/provider/courses/?student=${student.id}` : null);
   let grades: ActivityGrade[] = [];
   let courseOptions: Option[] = [];
   let catalogError = '';
@@ -66,7 +66,7 @@ export default function TaxonomySelector({ token, student, tree, content, onChan
   const course = courseOptions.find(row => row.id === selected.course);
   const grade = selected.grade ?? (course ? Number(field(course.raw, 'gradeid')) : undefined);
   const detail = useCatalog(token, source === 'quiz24' && depth >= 2 && selected.course && grade ? '/exams/provider/course-detail/' : null,
-    selected.course && grade ? { grade_id: grade, course_id: selected.course } : undefined);
+    selected.course && grade ? { grade_id: grade, course_id: selected.course, student: student.id } : undefined);
   let hierarchy: ReturnType<typeof hierarchySelection> | null = null;
   let parseError = '';
   if (detail.data && selected.course) {

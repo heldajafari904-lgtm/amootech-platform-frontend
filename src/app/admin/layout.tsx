@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { accessToken, api, clearSession, errorMessage, obtainTokenPair, onSessionExpired, saveSession, SESSION_EXPIRED, User } from "@/lib/api";
 
 const navItems = [
+  { href: "/admin/academics", label: "دسته‌بندی Quiz24", icon: "▤" },
   { href: "/admin", label: "داشبورد", exact: true, icon: "▦" },
   { href: "/admin/students", label: "دانش‌آموزان", icon: "◉" },
   { href: "/admin/counselors", label: "مشاوران", icon: "◎" },
